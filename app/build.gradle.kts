@@ -93,6 +93,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.play.services.mlkit.document.scanner)
+  implementation(libs.mlkit.text.recognition)
   implementation(libs.pdfbox.android)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
