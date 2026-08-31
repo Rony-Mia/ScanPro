@@ -24,9 +24,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.ScanProViewModel
 import com.example.model.ToolCategory
 import com.example.model.ToolType
 import com.example.ui.theme.*
+import com.example.util.rememberDocumentScannerLauncher
 
 data class ToolGridItem(
     val tool: ToolType,
@@ -38,7 +40,8 @@ data class ToolGridItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolsGridScreen(
-    onNavigateToScan: () -> Unit,
+    viewModel: ScanProViewModel,
+    onNavigateToScanReview: () -> Unit,
     onNavigateToOcr: () -> Unit,
     onNavigateToMerge: () -> Unit,
     onNavigateToSplit: () -> Unit,
@@ -48,6 +51,12 @@ fun ToolsGridScreen(
     onGenericToolSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Real scanner (camera + gallery import) instead of the old fake camera mock.
+    val launchScannerFlow = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
+        viewModel.setScannedPagesFromUris(uris)
+        onNavigateToScanReview()
+    }
+
     val toolItems = listOf(
         // Scanning (Soft Green Tint)
         ToolGridItem(ToolType.SCAN, Icons.Outlined.DocumentScanner, ToolCategoryScan, "tool_tile_scan"),
@@ -113,7 +122,7 @@ fun ToolsGridScreen(
                     item = item,
                     onClick = {
                         when (item.tool) {
-                            ToolType.SCAN -> onNavigateToScan()
+                            ToolType.SCAN -> launchScannerFlow()
                             ToolType.OCR -> onNavigateToOcr()
                             ToolType.MERGE -> onNavigateToMerge()
                             ToolType.SPLIT -> onNavigateToSplit()
