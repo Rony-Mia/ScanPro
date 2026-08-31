@@ -21,7 +21,6 @@ import com.example.ui.screens.*
 object ScanProRoutes {
     const val ONBOARDING = "onboarding"
     const val MAIN = "main"
-    const val CAMERA = "camera"
     const val SCAN_REVIEW = "scan_review"
     const val PDF_VIEWER = "pdf_viewer"
     const val MERGE = "merge"
@@ -106,7 +105,7 @@ fun ScanProNavGraph(
                         BottomTab.DOCUMENTS -> {
                             DocumentsLibraryScreen(
                                 viewModel = viewModel,
-                                onNavigateToScan = { navController.navigate(ScanProRoutes.CAMERA) },
+                                onNavigateToScanReview = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
                                 onNavigateToViewer = { doc ->
                                     viewModel.selectDocument(doc)
                                     navController.navigate(ScanProRoutes.PDF_VIEWER)
@@ -116,7 +115,8 @@ fun ScanProNavGraph(
 
                         BottomTab.TOOLS -> {
                             ToolsGridScreen(
-                                onNavigateToScan = { navController.navigate(ScanProRoutes.CAMERA) },
+                                viewModel = viewModel,
+                                onNavigateToScanReview = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
                                 onNavigateToOcr = { navController.navigate(ScanProRoutes.OCR) },
                                 onNavigateToMerge = { navController.navigate(ScanProRoutes.MERGE) },
                                 onNavigateToSplit = { navController.navigate(ScanProRoutes.SPLIT) },
@@ -140,16 +140,10 @@ fun ScanProNavGraph(
             }
         }
 
-        // 3. Camera Capture Screen
-        composable(ScanProRoutes.CAMERA) {
-            CameraCaptureScreen(
-                viewModel = viewModel,
-                onClose = { navController.popBackStack() },
-                onNavigateToReview = { navController.navigate(ScanProRoutes.SCAN_REVIEW) }
-            )
-        }
-
-        // 4. Scan Review Screen
+        // 3. Scan Review Screen
+        // Reached directly from Home / Documents / Tools once the real ML Kit
+        // scanner (camera + gallery import) has produced page images — there is
+        // no separate camera route anymore.
         composable(ScanProRoutes.SCAN_REVIEW) {
             ScanReviewScreen(
                 viewModel = viewModel,
@@ -159,14 +153,11 @@ fun ScanProNavGraph(
                     navController.navigate(ScanProRoutes.PDF_VIEWER) {
                         popUpTo(ScanProRoutes.MAIN)
                     }
-                },
-                onAddPage = {
-                    navController.navigate(ScanProRoutes.CAMERA)
                 }
             )
         }
 
-        // 5. PDF Viewer Screen
+        // 4. PDF Viewer Screen
         composable(ScanProRoutes.PDF_VIEWER) {
             val selectedDoc by viewModel.selectedDocument.collectAsState()
             selectedDoc?.let { doc ->
@@ -185,7 +176,7 @@ fun ScanProNavGraph(
             }
         }
 
-        // 6. Merge PDF Screen
+        // 5. Merge PDF Screen
         composable(ScanProRoutes.MERGE) {
             MergePdfScreen(
                 viewModel = viewModel,
@@ -199,7 +190,7 @@ fun ScanProNavGraph(
             )
         }
 
-        // 7. Split PDF Screen
+        // 6. Split PDF Screen
         composable(ScanProRoutes.SPLIT) {
             SplitPdfScreen(
                 viewModel = viewModel,
@@ -213,7 +204,7 @@ fun ScanProNavGraph(
             )
         }
 
-        // 8. Compress PDF Screen
+        // 7. Compress PDF Screen
         composable(ScanProRoutes.COMPRESS) {
             CompressPdfScreen(
                 viewModel = viewModel,
@@ -227,7 +218,7 @@ fun ScanProNavGraph(
             )
         }
 
-        // 9. Password Protect Screen
+        // 8. Password Protect Screen
         composable(ScanProRoutes.PASSWORD) {
             PasswordProtectScreen(
                 viewModel = viewModel,
@@ -241,7 +232,7 @@ fun ScanProNavGraph(
             )
         }
 
-        // 10. Add Watermark Screen
+        // 9. Add Watermark Screen
         composable(ScanProRoutes.WATERMARK) {
             AddWatermarkScreen(
                 viewModel = viewModel,
@@ -255,7 +246,7 @@ fun ScanProNavGraph(
             )
         }
 
-        // 11. OCR Text Screen
+        // 10. OCR Text Screen
         composable(ScanProRoutes.OCR) {
             OcrTextScreen(
                 viewModel = viewModel,

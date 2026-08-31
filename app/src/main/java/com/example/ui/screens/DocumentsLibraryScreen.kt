@@ -46,15 +46,22 @@ import com.example.ui.components.DocCard
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.example.util.rememberDocumentScannerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentsLibraryScreen(
     viewModel: ScanProViewModel,
-    onNavigateToScan: () -> Unit,
+    onNavigateToScanReview: () -> Unit,
     onNavigateToViewer: (DocumentItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Real scanner (camera + gallery import) instead of the old fake camera mock.
+    val launchScannerFlow = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
+        viewModel.setScannedPagesFromUris(uris)
+        onNavigateToScanReview()
+    }
+
     val documents by viewModel.documents.collectAsState()
     val filterTab by viewModel.filterTab.collectAsState()
     val isGridView by viewModel.isGridView.collectAsState()
@@ -162,7 +169,7 @@ fun DocumentsLibraryScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = onNavigateToScan,
+                onClick = launchScannerFlow,
                 containerColor = ScanProGreenContainer,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(16.dp),
@@ -311,7 +318,7 @@ fun DocumentsLibraryScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
-                        onClick = onNavigateToScan,
+                        onClick = launchScannerFlow,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
                             contentColor = Color.White

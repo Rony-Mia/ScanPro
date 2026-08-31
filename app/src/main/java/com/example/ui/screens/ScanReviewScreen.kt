@@ -43,6 +43,7 @@ import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.example.util.rememberDocumentScannerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,9 +51,14 @@ fun ScanReviewScreen(
     viewModel: ScanProViewModel,
     onBack: () -> Unit,
     onDone: (DocumentItem) -> Unit,
-    onAddPage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Real scanner (camera + gallery import) instead of the old fake camera mock.
+    // Appends newly captured/imported pages to the current draft.
+    val launchAddPageScan = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
+        viewModel.addScannedPagesFromUris(uris)
+    }
+
     val draftPages by viewModel.activeDraftPages.collectAsState()
     val selectedIndex by viewModel.selectedDraftIndex.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
@@ -311,7 +317,7 @@ fun ScanReviewScreen(
                     ReviewToolbarButton(
                         icon = Icons.Default.AddAPhoto,
                         label = "Add Page",
-                        onClick = onAddPage,
+                        onClick = launchAddPageScan,
                         testTag = "review_add_page_button"
                     )
                     ReviewToolbarButton(
