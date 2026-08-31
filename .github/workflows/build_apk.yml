@@ -18,14 +18,18 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # গ্র্যাডল এবং র্যাপার অটোমেটিক তৈরি করার জন্য এটি ব্যবহার করা হয়েছে
+    # নতুন অংশ: এটি নিজে থেকেই আপনার অ্যাপের জন্য প্রয়োজনীয় debug.keystore ফাইলটি বানিয়ে দেবে
+    - name: Generate Dummy Debug Keystore
+      run: |
+        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: wrapper
 
     - name: Build Debug APK
-      run: gradle assembleDebug # এখানে gradlew এর বদলে সরাসরি gradle ব্যবহার করা হয়েছে
+      run: gradle assembleDebug
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
