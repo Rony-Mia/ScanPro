@@ -1,5 +1,12 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,24 +24,27 @@ import androidx.compose.material.icons.outlined.MergeType
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.DocCard
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +60,84 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val documents by viewModel.documents.collectAsState()
+    val context = LocalContext.current
+    val activity = remember(context) {
+        var ctx = context
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) return@remember ctx
+            ctx = ctx.baseContext
+        }
+        null
+    }
+
+    val scannerOptions = remember {
+        GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+    }
+
+    val scanner = remember(scannerOptions) {
+        GmsDocumentScanning.getClient(scannerOptions)
+    }
+
+    val scannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val gmsResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            val pages = gmsResult?.pages
+            if (!pages.isNullOrEmpty()) {
+                val uris = pages.mapNotNull { it.imageUri }
+                if (uris.isNotEmpty()) {
+                    viewModel.setScannedPagesFromUris(uris)
+                    onNavigateToScan()
+                }
+            }
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            if (activity != null) {
+                scanner.getStartScanIntent(activity)
+                    .addOnSuccessListener { intentSender ->
+                        scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                    }
+                    .addOnFailureListener { error ->
+                        viewModel.showToast("Scanner error: ${error.localizedMessage}")
+                    }
+            }
+        } else {
+            viewModel.showToast("Camera permission is required to scan documents")
+        }
+    }
+
+    val launchScannerFlow: () -> Unit = {
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasCameraPermission) {
+            if (activity != null) {
+                scanner.getStartScanIntent(activity)
+                    .addOnSuccessListener { intentSender ->
+                        scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                    }
+                    .addOnFailureListener { error ->
+                        viewModel.showToast("Scanner error: ${error.localizedMessage}")
+                    }
+            } else {
+                viewModel.showToast("Scanner requires active activity")
+            }
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -105,7 +193,7 @@ fun HomeScreen(
             item {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
-                    onClick = onNavigateToScan,
+                    onClick = launchScannerFlow,
                     color = ScanProGreenContainer,
                     shape = RoundedCornerShape(16.dp),
                     shadowElevation = 2.dp,
@@ -164,10 +252,7 @@ fun HomeScreen(
                     QuickActionItem(
                         icon = Icons.Outlined.UploadFile,
                         label = "Import File",
-                        onClick = {
-                            viewModel.addPageToDraft()
-                            onNavigateToScan()
-                        },
+                        onClick = launchScannerFlow,
                         testTag = "quick_import"
                     )
                     QuickActionItem(

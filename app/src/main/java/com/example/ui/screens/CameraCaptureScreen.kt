@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,10 +25,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.ScanProViewModel
 import com.example.ui.theme.ScanProGreenContainer
@@ -263,8 +262,8 @@ fun CameraCaptureScreen(
             ) {
                 if (draftPages.isNotEmpty()) {
                     val lastPage = draftPages.last()
-                    Image(
-                        painter = painterResource(id = lastPage.drawableRes),
+                    AsyncImage(
+                        model = lastPage.imageUri ?: lastPage.drawableRes,
                         contentDescription = "Recent scan preview",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

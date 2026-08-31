@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
 import com.example.model.DocCategory
 import com.example.model.DocFormat
@@ -357,8 +358,8 @@ fun DocumentsLibraryScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color.White)
                                 ) {
-                                    Image(
-                                        painter = painterResource(id = doc.thumbnailRes),
+                                    AsyncImage(
+                                        model = doc.thumbnailUri ?: doc.thumbnailRes,
                                         contentDescription = doc.title,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop

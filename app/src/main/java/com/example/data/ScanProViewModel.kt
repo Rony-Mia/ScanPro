@@ -283,17 +283,55 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
         }
     }
 
-    fun addPageToDraft(@DrawableRes res: Int = R.drawable.sample_invoice) {
+    fun addPageToDraft(
+        @DrawableRes res: Int = R.drawable.sample_invoice,
+        imageUri: String? = null
+    ) {
         val pages = _activeDraftPages.value.toMutableList()
         val newPage = ScannedPage(
             id = UUID.randomUUID().toString(),
             pageNumber = pages.size + 1,
-            drawableRes = res
+            drawableRes = res,
+            imageUri = imageUri
         )
         pages.add(newPage)
         _activeDraftPages.value = pages
         _selectedDraftIndex.value = pages.size - 1
         showToast("Page ${pages.size} added")
+    }
+
+    fun setScannedPagesFromUris(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val newPages = uris.mapIndexed { index, uri ->
+            ScannedPage(
+                id = UUID.randomUUID().toString(),
+                pageNumber = index + 1,
+                imageUri = uri.toString(),
+                drawableRes = R.drawable.sample_invoice
+            )
+        }
+        _activeDraftPages.value = newPages
+        _selectedDraftIndex.value = 0
+        showToast("${newPages.size} ${if (newPages.size == 1) "page" else "pages"} scanned")
+    }
+
+    fun addScannedPagesFromUris(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val pages = _activeDraftPages.value.toMutableList()
+        val startIndex = pages.size
+        uris.forEachIndexed { index, uri ->
+            pages.add(
+                ScannedPage(
+                    id = UUID.randomUUID().toString(),
+                    pageNumber = startIndex + index + 1,
+                    imageUri = uri.toString(),
+                    drawableRes = R.drawable.sample_invoice
+                )
+            )
+        }
+        _activeDraftPages.value = pages
+        _selectedDraftIndex.value = pages.size - 1
+        showToast("${uris.size} ${if (uris.size == 1) "page" else "pages"} added")
     }
 
     fun deleteActivePage() {
@@ -313,6 +351,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
 
     fun finishScanAndSave(): DocumentItem {
         val pages = _activeDraftPages.value
+        val firstPage = pages.firstOrNull()
         val newDoc = DocumentItem(
             id = "doc-${System.currentTimeMillis()}",
             title = "Scan_${System.currentTimeMillis() % 10000}.pdf",
@@ -321,7 +360,8 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
             pageCount = pages.size,
             format = DocFormat.PDF,
             fileSize = "${(pages.size * 0.8).formatSize()} MB",
-            thumbnailRes = pages.firstOrNull()?.drawableRes ?: R.drawable.sample_invoice,
+            thumbnailRes = firstPage?.drawableRes ?: R.drawable.sample_invoice,
+            thumbnailUri = firstPage?.imageUri,
             category = DocCategory.TODAY,
             pages = pages,
             ocrText = defaultOcrInvoiceText

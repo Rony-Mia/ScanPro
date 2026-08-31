@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,11 +21,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.model.DocFormat
 import com.example.model.DocumentItem
 import com.example.ui.theme.ScanProGreenContainer
@@ -78,8 +77,8 @@ fun DocCard(
                         RoundedCornerShape(6.dp)
                     )
             ) {
-                Image(
-                    painter = painterResource(id = document.thumbnailRes),
+                AsyncImage(
+                    model = document.thumbnailUri ?: document.thumbnailRes,
                     contentDescription = document.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

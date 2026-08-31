@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,10 +32,10 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.model.PageFilter
@@ -150,8 +149,8 @@ fun ScanReviewScreen(
                             .clickable { viewModel.selectDraftPageIndex(index) }
                             .testTag("filmstrip_thumb_$index")
                     ) {
-                        Image(
-                            painter = painterResource(id = page.drawableRes),
+                        AsyncImage(
+                            model = page.imageUri ?: page.drawableRes,
                             contentDescription = "Page ${page.pageNumber}",
                             modifier = Modifier
                                 .fillMaxSize()
@@ -223,8 +222,8 @@ fun ScanReviewScreen(
                             .background(Color.White)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
                     ) {
-                        Image(
-                            painter = painterResource(id = activePage.drawableRes),
+                        AsyncImage(
+                            model = activePage.imageUri ?: activePage.drawableRes,
                             contentDescription = "Active Document Preview",
                             modifier = Modifier
                                 .fillMaxSize()

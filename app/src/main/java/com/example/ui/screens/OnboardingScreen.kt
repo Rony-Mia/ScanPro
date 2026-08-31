@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -30,6 +33,12 @@ fun OnboardingScreen(
     onSkip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        onAllowPermission()
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background
@@ -118,7 +127,9 @@ fun OnboardingScreen(
                     .padding(bottom = 16.dp)
             ) {
                 Button(
-                    onClick = onAllowPermission,
+                    onClick = {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = ScanProGreenContainer,
                         contentColor = androidx.compose.ui.graphics.Color.White

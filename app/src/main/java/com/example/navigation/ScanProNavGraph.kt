@@ -90,7 +90,7 @@ fun ScanProNavGraph(
                         BottomTab.HOME -> {
                             HomeScreen(
                                 viewModel = viewModel,
-                                onNavigateToScan = { navController.navigate(ScanProRoutes.CAMERA) },
+                                onNavigateToScan = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
                                 onNavigateToDocuments = { currentBottomTab = BottomTab.DOCUMENTS },
                                 onNavigateToViewer = { doc ->
                                     viewModel.selectDocument(doc)

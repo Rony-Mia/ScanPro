@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
@@ -67,11 +68,10 @@ fun PdfViewerScreen(
     )
 
     val totalPages = document.pageCount.coerceAtLeast(1)
-    val activeDrawable = if (document.pages.isNotEmpty()) {
-        document.pages.getOrNull(currentPageIndex % document.pages.size)?.drawableRes ?: document.thumbnailRes
-    } else {
-        sampleDrawables[currentPageIndex % sampleDrawables.size]
-    }
+    val activePage = if (document.pages.isNotEmpty()) {
+        document.pages.getOrNull(currentPageIndex % document.pages.size)
+    } else null
+    val activeModel: Any = activePage?.imageUri ?: activePage?.drawableRes ?: document.thumbnailUri ?: document.thumbnailRes
 
     Scaffold(
         topBar = {
@@ -199,8 +199,8 @@ fun PdfViewerScreen(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(id = activeDrawable),
+                AsyncImage(
+                    model = activeModel,
                     contentDescription = "Document Page ${currentPageIndex + 1}",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
@@ -300,7 +300,8 @@ fun PdfViewerScreen(
                     ) {
                         items(totalPages) { pageIdx ->
                             val isCurrent = pageIdx == currentPageIndex
-                            val thumbRes = sampleDrawables[pageIdx % sampleDrawables.size]
+                            val pageItem = document.pages.getOrNull(pageIdx)
+                            val thumbModel: Any = pageItem?.imageUri ?: pageItem?.drawableRes ?: sampleDrawables[pageIdx % sampleDrawables.size]
 
                             Box(
                                 modifier = Modifier
@@ -315,8 +316,8 @@ fun PdfViewerScreen(
                                         currentPageIndex = pageIdx
                                     }
                             ) {
-                                Image(
-                                    painter = painterResource(id = thumbRes),
+                                AsyncImage(
+                                    model = thumbModel,
                                     contentDescription = "Thumb ${pageIdx + 1}",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
