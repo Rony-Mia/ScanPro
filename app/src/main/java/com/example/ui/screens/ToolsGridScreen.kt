@@ -48,7 +48,11 @@ fun ToolsGridScreen(
     onNavigateToCompress: () -> Unit,
     onNavigateToWatermark: () -> Unit,
     onNavigateToPassword: () -> Unit,
-    onGenericToolSelected: (String) -> Unit,
+    onNavigateToImageToPdf: () -> Unit,
+    onNavigateToPdfToImage: () -> Unit,
+    onNavigateToRotate: () -> Unit,
+    onNavigateToDeletePages: () -> Unit,
+    onNavigateToSign: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Real scanner (camera + gallery import) instead of the old fake camera mock.
@@ -129,7 +133,11 @@ fun ToolsGridScreen(
                             ToolType.COMPRESS -> onNavigateToCompress()
                             ToolType.WATERMARK -> onNavigateToWatermark()
                             ToolType.PASSWORD -> onNavigateToPassword()
-                            else -> onGenericToolSelected(item.tool.title)
+                            ToolType.IMAGE_TO_PDF -> onNavigateToImageToPdf()
+                            ToolType.PDF_TO_IMAGE -> onNavigateToPdfToImage()
+                            ToolType.ROTATE -> onNavigateToRotate()
+                            ToolType.DELETE_PAGES -> onNavigateToDeletePages()
+                            ToolType.SIGN -> onNavigateToSign()
                         }
                     }
                 )
