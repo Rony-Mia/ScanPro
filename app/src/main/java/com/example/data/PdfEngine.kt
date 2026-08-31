@@ -1,13 +1,16 @@
 package com.example.data
 
 import android.content.Context
+import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix as AndroidMatrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import com.example.model.CompressionLevel
+import com.example.model.DocFormat
 import com.example.model.ScannedPage
 import com.example.model.WatermarkPosition
 import com.tom_roush.pdfbox.cos.COSName
@@ -54,6 +57,87 @@ class PdfEngine(private val context: Context) {
         }
         val stream = openInputStream(uri) ?: throw IllegalArgumentException("Cannot open stream for URI: $uri")
         return stream.use { PDDocument.load(it) }
+    }
+
+    /** Result of importing a real file picked from device storage (SAF). */
+    data class ImportedFile(
+        val file: File,
+        val displayName: String,
+        val format: DocFormat,
+        val pageCount: Int
+    )
+
+    /**
+     * Copies a file the user picked via the system document/gallery picker
+     * (content:// URI) into app-private storage, and reads its real name,
+     * MIME type and page count so it can become a genuine DocumentItem
+     * instead of one of the hardcoded sample documents.
+     */
+    suspend fun importExternalFile(uri: Uri, outputDir: File): ImportedFile? = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val mimeType = resolver.getType(uri)
+
+        var displayName = "Imported_${System.currentTimeMillis()}"
+        var sizeHint = 0L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor: Cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIdx >= 0) cursor.getString(nameIdx)?.let { displayName = it }
+                    if (sizeIdx >= 0) sizeHint = cursor.getLong(sizeIdx)
+                }
+            }
+
+        val isPdf = mimeType == "application/pdf" || displayName.endsWith(".pdf", ignoreCase = true)
+        val format = if (isPdf) DocFormat.PDF else DocFormat.JPG
+
+        val safeName = if (isPdf && !displayName.endsWith(".pdf", ignoreCase = true)) {
+            "$displayName.pdf"
+        } else if (!isPdf && !displayName.substringAfterLast('.', "").let {
+                it.equals("jpg", true) || it.equals("jpeg", true) || it.equals("png", true) || it.equals("webp", true)
+            }) {
+            "$displayName.jpg"
+        } else displayName
+
+        outputDir.mkdirs()
+        val outputFile = File(outputDir, "imported_${System.currentTimeMillis()}_$safeName")
+
+        val input = openInputStream(uri) ?: return@withContext null
+        input.use { inStream ->
+            FileOutputStream(outputFile).use { outStream ->
+                inStream.copyTo(outStream)
+            }
+        }
+
+        if (outputFile.length() == 0L && sizeHint <= 0L) {
+            // Nothing was actually copied — treat as a failed import rather than
+            // silently adding a broken 0-byte document.
+            outputFile.delete()
+            return@withContext null
+        }
+
+        val pageCount = if (format == DocFormat.PDF) {
+            try {
+                val doc = PDDocument.load(outputFile)
+                try {
+                    doc.numberOfPages
+                } finally {
+                    doc.close()
+                }
+            } catch (e: Exception) {
+                1
+            }
+        } else {
+            1
+        }
+
+        ImportedFile(
+            file = outputFile,
+            displayName = safeName,
+            format = format,
+            pageCount = pageCount.coerceAtLeast(1)
+        )
     }
 
     /**
