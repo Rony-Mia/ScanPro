@@ -1,0 +1,7 @@
+{
+  "name": "ScanPro",
+  "description": "Document scanning, OCR text extraction, and PDF utilities (Merge, Split, Compress, Watermark, Password Protect).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
