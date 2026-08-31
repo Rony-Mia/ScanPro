@@ -54,11 +54,11 @@ fun DeletePagesScreen(
 
     var thumbnails by remember(doc.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
     var isLoadingThumbs by remember(doc.id) { mutableStateOf(true) }
-    val selectedPages = remember(doc.id) { mutableStateSetOf<Int>() }
+    var selectedPages by remember(doc.id) { mutableStateOf<Set<Int>>(emptySet()) }
 
     LaunchedEffect(doc.id) {
         isLoadingThumbs = true
-        selectedPages.clear()
+        selectedPages = emptySet()
         viewModel.loadPageThumbnails(doc) { bitmaps ->
             thumbnails = bitmaps
             isLoadingThumbs = false
@@ -98,7 +98,7 @@ fun DeletePagesScreen(
                 ) {
                     Button(
                         onClick = {
-                            viewModel.deleteDocumentPages(doc, selectedPages.toSet()) { edited -> onDeleted(edited) }
+                            viewModel.deleteDocumentPages(doc, selectedPages) { edited -> onDeleted(edited) }
                         },
                         enabled = !isProcessing && selectedPages.isNotEmpty() && selectedPages.size < doc.pageCount,
                         colors = ButtonDefaults.buttonColors(
@@ -179,7 +179,7 @@ fun DeletePagesScreen(
                                         shape = RoundedCornerShape(8.dp)
                                     )
                                     .clickable {
-                                        if (isSelected) selectedPages.remove(index) else selectedPages.add(index)
+                                        selectedPages = if (isSelected) selectedPages - index else selectedPages + index
                                     }
                                     .testTag("delete_pages_page_$index"),
                                 contentAlignment = Alignment.Center
