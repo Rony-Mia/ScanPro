@@ -21,10 +21,19 @@ import java.util.UUID
 class ScanProViewModel(application: Application) : AndroidViewModel(application) {
 
     private val pdfEngine = PdfEngine(application)
+    private val ocrEngine = OcrEngine(application)
     private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
+
+    private val _ocrProgress = MutableStateFlow(0f)
+    val ocrProgress: StateFlow<Float> = _ocrProgress.asStateFlow()
+
+    override fun onCleared() {
+        super.onCleared()
+        ocrEngine.close()
+    }
 
     private val initialSamplePages = listOf(
         ScannedPage(
@@ -634,6 +643,37 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showToast("Watermark failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    fun extractTextFromDocument(doc: DocumentItem, onComplete: ((String) -> Unit)? = null) {
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            _ocrProgress.value = 0f
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val extractedText = ocrEngine.extractTextFromPdf(sourceFile) { progress ->
+                    _ocrProgress.value = progress
+                }
+
+                _documents.update { list ->
+                    list.map { if (it.id == doc.id) it.copy(ocrText = extractedText) else it }
+                }
+                if (_selectedDocument.value?.id == doc.id) {
+                    _selectedDocument.value = _selectedDocument.value?.copy(ocrText = extractedText)
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(extractedText)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Text extraction failed: ${e.localizedMessage ?: "Unknown error"}")
                 }
             } finally {
                 _isProcessing.value = false
