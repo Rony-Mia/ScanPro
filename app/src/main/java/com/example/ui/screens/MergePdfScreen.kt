@@ -44,6 +44,7 @@ fun MergePdfScreen(
     modifier: Modifier = Modifier
 ) {
     val allDocs by viewModel.documents.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     var selectedDocIds by remember(allDocs) {
         mutableStateOf(allDocs.take(3).map { it.id }.toMutableList())
     }
@@ -63,6 +64,7 @@ fun MergePdfScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("merge_back_button")
                     ) {
                         Icon(
@@ -75,6 +77,7 @@ fun MergePdfScreen(
                 actions = {
                     TextButton(
                         onClick = { showAddDialog = true },
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("merge_add_files_button")
                     ) {
                         Row(
@@ -117,15 +120,19 @@ fun MergePdfScreen(
                     Button(
                         onClick = {
                             if (selectedDocIds.size >= 2) {
-                                val merged = viewModel.mergeDocuments(selectedDocIds)
-                                onMergeCompleted(merged)
+                                viewModel.mergeDocuments(selectedDocIds) { merged ->
+                                    onMergeCompleted(merged)
+                                }
                             } else {
                                 viewModel.showToast("Select at least 2 files to merge")
                             }
                         },
+                        enabled = !isProcessing,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
-                            contentColor = Color.White
+                            contentColor = Color.White,
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.6f),
+                            disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -133,11 +140,25 @@ fun MergePdfScreen(
                             .height(52.dp)
                             .testTag("merge_now_button")
                     ) {
-                        Text(
-                            text = "Merge Now",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Merging PDFs...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Merge Now",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

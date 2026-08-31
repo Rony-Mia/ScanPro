@@ -55,6 +55,7 @@ fun ScanReviewScreen(
 ) {
     val draftPages by viewModel.activeDraftPages.collectAsState()
     val selectedIndex by viewModel.selectedDraftIndex.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     val activePage = draftPages.getOrNull(selectedIndex) ?: draftPages.firstOrNull()
     var isCropModeActive by remember { mutableStateOf(true) }
@@ -77,6 +78,7 @@ fun ScanReviewScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("scan_review_back_button")
                     ) {
                         Icon(
@@ -89,27 +91,44 @@ fun ScanReviewScreen(
                 actions = {
                     TextButton(
                         onClick = {
-                            val savedDoc = viewModel.finishScanAndSave()
-                            onDone(savedDoc)
+                            viewModel.finishScanAndSave { savedDoc ->
+                                onDone(savedDoc)
+                            }
                         },
+                        enabled = !isProcessing && draftPages.isNotEmpty(),
                         modifier = Modifier.testTag("scan_review_done_button")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = ScanProGreenContainer,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Done",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = ScanProGreenContainer
-                            )
+                            if (isProcessing) {
+                                CircularProgressIndicator(
+                                    color = ScanProGreenContainer,
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Saving...",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ScanProGreenContainer
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = ScanProGreenContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Done",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ScanProGreenContainer
+                                )
+                            }
                         }
                     }
                 },

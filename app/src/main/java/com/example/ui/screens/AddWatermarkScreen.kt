@@ -40,6 +40,7 @@ fun AddWatermarkScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     val doc = selectedDoc ?: return
 
     var watermarkText by remember { mutableStateOf("CONFIDENTIAL") }
@@ -60,6 +61,7 @@ fun AddWatermarkScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("watermark_back_button")
                     ) {
                         Icon(
@@ -89,12 +91,16 @@ fun AddWatermarkScreen(
                 ) {
                     Button(
                         onClick = {
-                            val watermarked = viewModel.watermarkDocument(doc, watermarkText, selectedPosition, opacity)
-                            onWatermarkApplied(watermarked)
+                            viewModel.watermarkDocument(doc, watermarkText, selectedPosition, opacity) { watermarked ->
+                                onWatermarkApplied(watermarked)
+                            }
                         },
+                        enabled = !isProcessing && watermarkText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
-                            contentColor = Color.White
+                            contentColor = Color.White,
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.6f),
+                            disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -102,11 +108,25 @@ fun AddWatermarkScreen(
                             .height(52.dp)
                             .testTag("apply_watermark_button")
                     ) {
-                        Text(
-                            text = "Apply Watermark",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Applying Watermark...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Apply Watermark",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

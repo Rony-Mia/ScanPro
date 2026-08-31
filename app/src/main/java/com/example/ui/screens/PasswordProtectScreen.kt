@@ -42,6 +42,7 @@ fun PasswordProtectScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     val doc = selectedDoc ?: return
 
     var password by remember { mutableStateOf("") }
@@ -66,6 +67,7 @@ fun PasswordProtectScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("password_back_button")
                     ) {
                         Icon(
@@ -96,17 +98,21 @@ fun PasswordProtectScreen(
                     Button(
                         onClick = {
                             if (isValid) {
-                                val protectedDoc = viewModel.passwordProtectDocument(doc, password)
-                                onProtected(protectedDoc)
+                                viewModel.passwordProtectDocument(doc, password) { protectedDoc ->
+                                    onProtected(protectedDoc)
+                                }
                             } else if (isMismatch) {
                                 viewModel.showToast("Passwords do not match")
                             } else {
                                 viewModel.showToast("Please enter and confirm a password")
                             }
                         },
+                        enabled = !isProcessing && isValid,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isValid) ScanProGreenContainer else ScanProGreenContainer.copy(alpha = 0.5f),
-                            contentColor = Color.White
+                            containerColor = ScanProGreenContainer,
+                            contentColor = Color.White,
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.5f),
+                            disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -114,13 +120,27 @@ fun PasswordProtectScreen(
                             .height(52.dp)
                             .testTag("protect_file_button")
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Protect File",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Encrypting PDF...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Protect File",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

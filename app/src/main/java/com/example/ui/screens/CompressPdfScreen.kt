@@ -39,6 +39,7 @@ fun CompressPdfScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     val doc = selectedDoc ?: return
 
     var selectedLevel by remember { mutableStateOf(CompressionLevel.MEDIUM) }
@@ -57,6 +58,7 @@ fun CompressPdfScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("compress_back_button")
                     ) {
                         Icon(
@@ -67,7 +69,10 @@ fun CompressPdfScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.showToast("Compression settings") }) {
+                    IconButton(
+                        onClick = { viewModel.showToast("Compression settings") },
+                        enabled = !isProcessing
+                    ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "More",
@@ -95,12 +100,16 @@ fun CompressPdfScreen(
                 ) {
                     Button(
                         onClick = {
-                            val compressed = viewModel.compressDocument(doc, selectedLevel)
-                            onCompressCompleted(compressed)
+                            viewModel.compressDocument(doc, selectedLevel) { compressed ->
+                                onCompressCompleted(compressed)
+                            }
                         },
+                        enabled = !isProcessing,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
-                            contentColor = Color.White
+                            contentColor = Color.White,
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.6f),
+                            disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -108,12 +117,26 @@ fun CompressPdfScreen(
                             .height(52.dp)
                             .testTag("compress_action_button")
                     ) {
-                        Text(
-                            text = "COMPRESS",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Compressing...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "COMPRESS",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
                     }
                 }
             }

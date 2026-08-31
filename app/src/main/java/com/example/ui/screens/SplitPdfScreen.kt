@@ -42,6 +42,7 @@ fun SplitPdfScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
     val doc = selectedDoc ?: return
 
     val totalPages = doc.pageCount.coerceAtLeast(4)
@@ -69,6 +70,7 @@ fun SplitPdfScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = onBack,
+                        enabled = !isProcessing,
                         modifier = Modifier.testTag("split_back_button")
                     ) {
                         Icon(
@@ -99,12 +101,16 @@ fun SplitPdfScreen(
                     val partsCount = splitCuts.size + 1
                     Button(
                         onClick = {
-                            viewModel.splitDocument(doc, splitCuts.toList().sorted())
-                            onSplitCompleted()
+                            viewModel.splitDocument(doc, splitCuts.toList().sorted()) {
+                                onSplitCompleted()
+                            }
                         },
+                        enabled = !isProcessing,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
-                            contentColor = Color.White
+                            contentColor = Color.White,
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.6f),
+                            disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -112,11 +118,25 @@ fun SplitPdfScreen(
                             .height(52.dp)
                             .testTag("split_confirm_button")
                     ) {
-                        Text(
-                            text = "Split into $partsCount Files",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Splitting PDF...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Split into $partsCount Files",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
