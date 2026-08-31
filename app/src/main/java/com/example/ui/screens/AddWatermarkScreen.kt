@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.model.WatermarkPosition
+import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 
@@ -69,6 +70,16 @@ fun AddWatermarkScreen(
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                },
+                actions = {
+                    ChangeDocumentButton(
+                        viewModel = viewModel,
+                        currentDocId = doc.id,
+                        enabled = !isProcessing,
+                        testTagPrefix = "watermark"
+                    ) { selected ->
+                        viewModel.selectDocument(selected)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

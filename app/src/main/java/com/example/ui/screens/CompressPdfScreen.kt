@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.CompressionLevel
 import com.example.model.DocumentItem
+import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
@@ -69,15 +70,13 @@ fun CompressPdfScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.showToast("Compression settings") },
-                        enabled = !isProcessing
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    ChangeDocumentButton(
+                        viewModel = viewModel,
+                        currentDocId = doc.id,
+                        enabled = !isProcessing,
+                        testTagPrefix = "compress"
+                    ) { selected ->
+                        viewModel.selectDocument(selected)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

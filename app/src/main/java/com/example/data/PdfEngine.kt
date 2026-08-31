@@ -359,6 +359,169 @@ class PdfEngine(private val context: Context) {
     }
 
     /**
+     * Real "Image to PDF" conversion: decodes each picked image URI and writes it as its
+     * own page, sized to the image's own dimensions, into a single output PDF.
+     */
+    suspend fun imagesToPdf(imageUris: List<Uri>, outputFile: File): File = withContext(Dispatchers.IO) {
+        if (imageUris.isEmpty()) throw IllegalArgumentException("No images provided")
+        outputFile.parentFile?.mkdirs()
+        val doc = PDDocument()
+        try {
+            for (uri in imageUris) {
+                val bitmap = openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: continue
+                val scaled = scaleBitmapDown(bitmap, 2200)
+                try {
+                    val pageRect = PDRectangle(scaled.width.toFloat(), scaled.height.toFloat())
+                    val pdPage = PDPage(pageRect)
+                    doc.addPage(pdPage)
+
+                    val pdImage = JPEGFactory.createFromImage(doc, scaled, 0.90f)
+                    val contentStream = PDPageContentStream(doc, pdPage)
+                    contentStream.drawImage(pdImage, 0f, 0f, scaled.width.toFloat(), scaled.height.toFloat())
+                    contentStream.close()
+                } finally {
+                    if (scaled !== bitmap) scaled.recycle()
+                    bitmap.recycle()
+                }
+            }
+            if (doc.numberOfPages == 0) throw IllegalStateException("None of the selected images could be read")
+            doc.save(outputFile)
+        } finally {
+            doc.close()
+        }
+        outputFile
+    }
+
+    /**
+     * Real "PDF to Image" conversion: renders every page of a real PDF file (via Android's
+     * native PdfRenderer) to its own JPEG file.
+     */
+    suspend fun pdfToImages(pdfFile: File, outputDir: File): List<File> = withContext(Dispatchers.IO) {
+        outputDir.mkdirs()
+        val results = mutableListOf<File>()
+        val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+        val renderer = PdfRenderer(pfd)
+        try {
+            for (i in 0 until renderer.pageCount) {
+                val page = renderer.openPage(i)
+                val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                page.close()
+
+                val outFile = File(outputDir, "page_${i + 1}.jpg")
+                FileOutputStream(outFile).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out) }
+                bitmap.recycle()
+                results.add(outFile)
+            }
+        } finally {
+            renderer.close()
+            pfd.close()
+        }
+        results
+    }
+
+    /**
+     * Rotates individual pages of a real PDF. [rotations] maps 0-based page index to the
+     * number of degrees to add (multiples of 90) via PDFBox's page rotation attribute —
+     * this changes how the page is displayed/printed without re-rendering its content.
+     */
+    suspend fun rotatePages(inputUri: Uri, rotations: Map<Int, Int>, outputFile: File): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val doc = loadDocument(inputUri)
+        try {
+            for ((index, degrees) in rotations) {
+                if (degrees == 0) continue
+                if (index !in 0 until doc.numberOfPages) continue
+                val page = doc.getPage(index)
+                val newRotation = ((page.rotation + degrees) % 360 + 360) % 360
+                page.rotation = newRotation
+            }
+            doc.save(outputFile)
+        } finally {
+            doc.close()
+        }
+        outputFile
+    }
+
+    /**
+     * Deletes the given 0-based page indices from a real PDF by rebuilding a new document
+     * from only the pages that were kept (safer than in-place removal for re-saving).
+     * Refuses to produce an empty document — if every page was selected, the first
+     * original page is kept so the result is never a corrupt 0-page PDF.
+     */
+    suspend fun deletePages(inputUri: Uri, pageIndicesToDelete: Set<Int>, outputFile: File): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val sourceDoc = loadDocument(inputUri)
+        val newDoc = PDDocument()
+        try {
+            for (i in 0 until sourceDoc.numberOfPages) {
+                if (i !in pageIndicesToDelete) {
+                    newDoc.importPage(sourceDoc.getPage(i))
+                }
+            }
+            if (newDoc.numberOfPages == 0 && sourceDoc.numberOfPages > 0) {
+                newDoc.importPage(sourceDoc.getPage(0))
+            }
+            newDoc.save(outputFile)
+        } finally {
+            newDoc.close()
+            sourceDoc.close()
+        }
+        outputFile
+    }
+
+    /**
+     * Draws a real hand-drawn signature (captured as a list of freehand strokes, each a
+     * list of (x, y) points in the signature pad's own coordinate space) onto one page of
+     * a PDF as vector line art — scaled into a fixed box near the bottom-right corner.
+     */
+    suspend fun addSignature(
+        inputUri: Uri,
+        pageIndex: Int,
+        strokes: List<List<Pair<Float, Float>>>,
+        padWidth: Float,
+        padHeight: Float,
+        outputFile: File
+    ): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val doc = loadDocument(inputUri)
+        try {
+            if (doc.numberOfPages == 0) throw IllegalStateException("Document has no pages")
+            val safePageIndex = pageIndex.coerceIn(0, doc.numberOfPages - 1)
+            val page = doc.getPage(safePageIndex)
+            val mediaBox = page.mediaBox ?: PDRectangle.A4
+
+            val boxWidth = 190f
+            val boxHeight = 80f
+            val originX = (mediaBox.width - boxWidth - 40f).coerceAtLeast(20f)
+            val originY = 46f
+
+            val safePadW = if (padWidth > 0f) padWidth else 1f
+            val safePadH = if (padHeight > 0f) padHeight else 1f
+            val scaleX = boxWidth / safePadW
+            val scaleY = boxHeight / safePadH
+
+            val contentStream = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+            contentStream.setStrokingColor(25, 25, 25)
+            contentStream.setLineWidth(2.2f)
+            for (stroke in strokes) {
+                if (stroke.size < 2) continue
+                val (fx, fy) = stroke.first()
+                contentStream.moveTo(originX + fx * scaleX, originY + boxHeight - fy * scaleY)
+                for ((x, y) in stroke.drop(1)) {
+                    contentStream.lineTo(originX + x * scaleX, originY + boxHeight - y * scaleY)
+                }
+                contentStream.stroke()
+            }
+            contentStream.close()
+            doc.save(outputFile)
+        } finally {
+            doc.close()
+        }
+        outputFile
+    }
+
+    /**
      * Generates a PDF file from scanned pages (either image URIs or resource drawables).
      */
     suspend fun createPdfFromPages(pages: List<ScannedPage>, outputFile: File): File = withContext(Dispatchers.IO) {

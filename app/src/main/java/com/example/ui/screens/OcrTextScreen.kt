@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
+import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
@@ -100,6 +101,14 @@ fun OcrTextScreen(
                     }
                 },
                 actions = {
+                    ChangeDocumentButton(
+                        viewModel = viewModel,
+                        currentDocId = doc.id,
+                        enabled = !isProcessing,
+                        testTagPrefix = "ocr"
+                    ) { selected ->
+                        viewModel.selectDocument(selected)
+                    }
                     IconButton(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(extractedText))

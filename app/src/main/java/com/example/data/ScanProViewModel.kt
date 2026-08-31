@@ -174,6 +174,30 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
     private val _selectedDocument = MutableStateFlow<DocumentItem?>(defaultDocuments.first())
     val selectedDocument: StateFlow<DocumentItem?> = _selectedDocument.asStateFlow()
 
+    // Document persistence: the library used to live only in memory (MutableStateFlow),
+    // so every real scan/import/merge/etc. was lost the moment the app process died.
+    // On startup we load whatever was last saved to disk (if any), and from then on every
+    // change to _documents is written back to a JSON file in app storage.
+    private var isRestoringPersistedLibrary = true
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            val persisted = DocumentStore.load(documentsDir)
+            withContext(Dispatchers.Main) {
+                if (persisted != null) {
+                    _documents.value = persisted
+                    _selectedDocument.value = persisted.firstOrNull()
+                }
+                isRestoringPersistedLibrary = false
+            }
+            documents.collect { docs ->
+                if (!isRestoringPersistedLibrary) {
+                    DocumentStore.save(documentsDir, docs)
+                }
+            }
+        }
+    }
+
     private val _filterTab = MutableStateFlow("All")
     val filterTab: StateFlow<String> = _filterTab.asStateFlow()
 
@@ -713,6 +737,241 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showToast("Watermark failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /**
+     * Renders every page of [doc]'s real PDF file to a Bitmap (via Android's native
+     * PdfRenderer) so screens like Rotate Pages / Delete Pages can show real page
+     * thumbnails instead of the old hardcoded sample images.
+     */
+    fun loadPageThumbnails(doc: DocumentItem, onResult: (List<android.graphics.Bitmap>) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bitmaps = try {
+                val file = ensurePdfFileInternal(doc)
+                (0 until doc.pageCount).mapNotNull { pageIndex ->
+                    pdfEngine.renderPdfPageToBitmap(file, pageIndex)
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            withContext(Dispatchers.Main) { onResult(bitmaps) }
+        }
+    }
+
+    /** Real "Image to PDF": converts one or more picked images into a single new PDF document. */
+    fun convertImagesToPdf(uris: List<Uri>, onComplete: ((DocumentItem) -> Unit)? = null) {
+        if (uris.isEmpty()) {
+            showToast("Choose at least 1 image")
+            return
+        }
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val docId = "doc-${System.currentTimeMillis()}"
+                val title = "Image_to_PDF_${System.currentTimeMillis() % 10000}.pdf"
+                val outputFile = File(documentsDir, "$docId.pdf")
+
+                val generatedFile = pdfEngine.imagesToPdf(uris, outputFile)
+                val realSize = PdfEngine.formatFileSize(generatedFile.length())
+                val thumbFile = File(documentsDir, "${docId}_thumb.jpg")
+                val thumbnailUri = pdfEngine.generateThumbnailForPdf(generatedFile, thumbFile)?.toString()
+
+                val newDoc = DocumentItem(
+                    id = docId,
+                    title = title,
+                    date = "Today",
+                    time = "Just now",
+                    pageCount = uris.size,
+                    format = DocFormat.PDF,
+                    fileSize = realSize,
+                    thumbnailUri = thumbnailUri,
+                    category = DocCategory.TODAY,
+                    filePath = generatedFile.absolutePath
+                )
+                _documents.update { listOf(newDoc) + it }
+                _selectedDocument.value = newDoc
+                withContext(Dispatchers.Main) {
+                    showToast("${uris.size} ${if (uris.size == 1) "image" else "images"} converted to PDF ($realSize)")
+                    onComplete?.invoke(newDoc)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Image to PDF failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /** Real "PDF to Image": renders every page of a PDF document into its own JPEG document. */
+    fun convertPdfToImages(doc: DocumentItem, onComplete: ((List<DocumentItem>) -> Unit)? = null) {
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val outputDir = File(documentsDir, "pdf_to_img_${System.currentTimeMillis()}").apply { mkdirs() }
+                val imageFiles = pdfEngine.pdfToImages(sourceFile, outputDir)
+
+                val baseName = doc.title.substringBeforeLast(".")
+                val results = imageFiles.mapIndexed { index, file ->
+                    DocumentItem(
+                        id = "doc-${System.currentTimeMillis()}-$index",
+                        title = "${baseName}_page${index + 1}.jpg",
+                        date = "Today",
+                        time = "Just now",
+                        pageCount = 1,
+                        format = DocFormat.JPG,
+                        fileSize = PdfEngine.formatFileSize(file.length()),
+                        thumbnailUri = Uri.fromFile(file).toString(),
+                        category = DocCategory.TODAY,
+                        filePath = file.absolutePath
+                    )
+                }
+                _documents.update { results + it }
+                withContext(Dispatchers.Main) {
+                    showToast("Converted to ${results.size} ${if (results.size == 1) "image" else "images"}")
+                    onComplete?.invoke(results)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("PDF to Image failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /** Real "Rotate Pages": rotates the given 0-based page indices by [degrees] and saves as a new document. */
+    fun rotateDocumentPages(doc: DocumentItem, rotations: Map<Int, Int>, onComplete: ((DocumentItem) -> Unit)? = null) {
+        if (rotations.values.all { it == 0 }) {
+            showToast("Rotate at least one page first")
+            return
+        }
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val docId = "doc-${System.currentTimeMillis()}"
+                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_rotated.pdf")
+
+                val rotatedFile = pdfEngine.rotatePages(Uri.fromFile(sourceFile), rotations, outputFile)
+                val realSize = PdfEngine.formatFileSize(rotatedFile.length())
+                val rotated = doc.copy(
+                    id = docId,
+                    title = outputFile.name,
+                    fileSize = realSize,
+                    filePath = rotatedFile.absolutePath
+                )
+                _documents.update { listOf(rotated) + it }
+                _selectedDocument.value = rotated
+                withContext(Dispatchers.Main) {
+                    showToast("Pages rotated ($realSize)")
+                    onComplete?.invoke(rotated)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Rotate failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /** Real "Delete Pages": removes the given 0-based page indices and saves as a new document. */
+    fun deleteDocumentPages(doc: DocumentItem, pageIndices: Set<Int>, onComplete: ((DocumentItem) -> Unit)? = null) {
+        if (pageIndices.isEmpty()) {
+            showToast("Select at least one page to delete")
+            return
+        }
+        if (pageIndices.size >= doc.pageCount) {
+            showToast("Can't delete every page")
+            return
+        }
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val docId = "doc-${System.currentTimeMillis()}"
+                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_edited.pdf")
+
+                val resultFile = pdfEngine.deletePages(Uri.fromFile(sourceFile), pageIndices, outputFile)
+                val realSize = PdfEngine.formatFileSize(resultFile.length())
+                val newPageCount = (doc.pageCount - pageIndices.size).coerceAtLeast(1)
+                val edited = doc.copy(
+                    id = docId,
+                    title = outputFile.name,
+                    fileSize = realSize,
+                    pageCount = newPageCount,
+                    filePath = resultFile.absolutePath
+                )
+                _documents.update { listOf(edited) + it }
+                _selectedDocument.value = edited
+                withContext(Dispatchers.Main) {
+                    showToast("${pageIndices.size} ${if (pageIndices.size == 1) "page" else "pages"} deleted ($realSize)")
+                    onComplete?.invoke(edited)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Delete pages failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /** Real "Sign Document": embeds a hand-drawn signature (vector strokes) onto one page. */
+    fun signDocument(
+        doc: DocumentItem,
+        strokes: List<List<Pair<Float, Float>>>,
+        padWidth: Float,
+        padHeight: Float,
+        pageIndex: Int = doc.pageCount - 1,
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
+        if (strokes.isEmpty()) {
+            showToast("Draw a signature first")
+            return
+        }
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val docId = "doc-${System.currentTimeMillis()}"
+                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_signed.pdf")
+
+                val signedFile = pdfEngine.addSignature(
+                    Uri.fromFile(sourceFile), pageIndex, strokes, padWidth, padHeight, outputFile
+                )
+                val realSize = PdfEngine.formatFileSize(signedFile.length())
+                val signed = doc.copy(
+                    id = docId,
+                    title = outputFile.name,
+                    fileSize = realSize,
+                    filePath = signedFile.absolutePath
+                )
+                _documents.update { listOf(signed) + it }
+                _selectedDocument.value = signed
+                withContext(Dispatchers.Main) {
+                    showToast("Document signed ($realSize)")
+                    onComplete?.invoke(signed)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Signing failed: ${e.localizedMessage ?: "Unknown error"}")
                 }
             } finally {
                 _isProcessing.value = false

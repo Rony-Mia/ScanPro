@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
+import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
@@ -78,6 +79,17 @@ fun SplitPdfScreen(
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                },
+                actions = {
+                    ChangeDocumentButton(
+                        viewModel = viewModel,
+                        currentDocId = doc.id,
+                        enabled = !isProcessing,
+                        testTagPrefix = "split"
+                    ) { selected ->
+                        viewModel.selectDocument(selected)
+                        splitCuts = emptySet()
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

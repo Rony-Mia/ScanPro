@@ -29,6 +29,11 @@ object ScanProRoutes {
     const val PASSWORD = "password"
     const val WATERMARK = "watermark"
     const val OCR = "ocr"
+    const val IMAGE_TO_PDF = "image_to_pdf"
+    const val PDF_TO_IMAGE = "pdf_to_image"
+    const val ROTATE = "rotate"
+    const val DELETE_PAGES = "delete_pages"
+    const val SIGN = "sign"
 }
 
 @Composable
@@ -123,9 +128,11 @@ fun ScanProNavGraph(
                                 onNavigateToCompress = { navController.navigate(ScanProRoutes.COMPRESS) },
                                 onNavigateToWatermark = { navController.navigate(ScanProRoutes.WATERMARK) },
                                 onNavigateToPassword = { navController.navigate(ScanProRoutes.PASSWORD) },
-                                onGenericToolSelected = { toolName ->
-                                    viewModel.showToast("$toolName ready")
-                                }
+                                onNavigateToImageToPdf = { navController.navigate(ScanProRoutes.IMAGE_TO_PDF) },
+                                onNavigateToPdfToImage = { navController.navigate(ScanProRoutes.PDF_TO_IMAGE) },
+                                onNavigateToRotate = { navController.navigate(ScanProRoutes.ROTATE) },
+                                onNavigateToDeletePages = { navController.navigate(ScanProRoutes.DELETE_PAGES) },
+                                onNavigateToSign = { navController.navigate(ScanProRoutes.SIGN) }
                             )
                         }
 
@@ -251,6 +258,76 @@ fun ScanProNavGraph(
             OcrTextScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 11. Image to PDF Screen
+        composable(ScanProRoutes.IMAGE_TO_PDF) {
+            ImageToPdfScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onConverted = { newDoc ->
+                    viewModel.selectDocument(newDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
+            )
+        }
+
+        // 12. PDF to Image Screen
+        composable(ScanProRoutes.PDF_TO_IMAGE) {
+            PdfToImageScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onConverted = {
+                    currentBottomTab = BottomTab.DOCUMENTS
+                    navController.navigate(ScanProRoutes.MAIN) {
+                        popUpTo(ScanProRoutes.MAIN) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // 13. Rotate Pages Screen
+        composable(ScanProRoutes.ROTATE) {
+            RotatePagesScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onRotated = { rotatedDoc ->
+                    viewModel.selectDocument(rotatedDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
+            )
+        }
+
+        // 14. Delete Pages Screen
+        composable(ScanProRoutes.DELETE_PAGES) {
+            DeletePagesScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onDeleted = { editedDoc ->
+                    viewModel.selectDocument(editedDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
+            )
+        }
+
+        // 15. Sign Document Screen
+        composable(ScanProRoutes.SIGN) {
+            SignDocumentScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onSigned = { signedDoc ->
+                    viewModel.selectDocument(signedDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
             )
         }
     }
