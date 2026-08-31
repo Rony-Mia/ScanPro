@@ -1,0 +1,31 @@
+name: Generate ScanPro APK
+
+on:
+  workflow_dispatch: # এর ফলে আপনি যখন ইচ্ছা নিজে বাটন টিপে APK বানাতে পারবেন
+  push:
+    branches: [ "main" ] # যখনই main ব্রাঞ্চে কোড আপডেট বা পুশ করবেন, অটোমেটিক APK তৈরি হবে
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Grant Execute Permission
+      run: chmod +x gradlew
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ScanPro-App
+        path: app/build/outputs/apk/debug/*.apk
