@@ -1,9 +1,9 @@
 name: Generate ScanPro APK
 
 on:
-  workflow_dispatch: # এর ফলে আপনি যখন ইচ্ছা নিজে বাটন টিপে APK বানাতে পারবেন
+  workflow_dispatch:
   push:
-    branches: [ "main" ] # যখনই main ব্রাঞ্চে কোড আপডেট বা পুশ করবেন, অটোমেটিক APK তৈরি হবে
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -18,12 +18,15 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Grant Execute Permission
-      run: chmod +x gradlew
+    # গ্র্যাডল এবং র্যাপার অটোমেটিক তৈরি করার জন্য এটি ব্যবহার করা হয়েছে
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: wrapper
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
-
+      run: gradle assembleDebug # এখানে gradlew এর বদলে সরাসরি gradle ব্যবহার করা হয়েছে
+      
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
