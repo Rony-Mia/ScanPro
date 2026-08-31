@@ -1,19 +1,30 @@
 package com.example.data
 
+import android.app.Application
+import android.net.Uri
 import androidx.annotation.DrawableRes
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
 import com.example.model.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.util.UUID
 
-class ScanProViewModel : ViewModel() {
+class ScanProViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val pdfEngine = PdfEngine(application)
+    private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
+
+    private val _isProcessing = MutableStateFlow(false)
+    val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
     private val initialSamplePages = listOf(
         ScannedPage(
@@ -108,7 +119,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
             title = "Expense_Report_Q3.pdf",
             date = "Oct 15",
             time = "04:30 PM",
-            pageCount = 12,
+            pageCount = 4,
             format = DocFormat.OCR,
             fileSize = "4.1 MB",
             thumbnailRes = R.drawable.sample_spreadsheet,
@@ -118,10 +129,10 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
         ),
         DocumentItem(
             id = "doc-4",
-            title = "NDA_TechCorp_Final",
+            title = "NDA_TechCorp_Final.pdf",
             date = "Yesterday",
             time = "02:10 PM",
-            pageCount = 5,
+            pageCount = 4,
             format = DocFormat.PDF,
             fileSize = "3.2 MB",
             thumbnailRes = R.drawable.sample_contract,
@@ -133,7 +144,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
             title = "Q3_Financial_Report_Final.pdf",
             date = "Oct 10",
             time = "11:20 AM",
-            pageCount = 12,
+            pageCount = 4,
             format = DocFormat.PDF,
             fileSize = "2.4 MB",
             thumbnailRes = R.drawable.sample_invoice,
@@ -349,26 +360,55 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
         }
     }
 
+    private fun ensurePdfFile(doc: DocumentItem): File {
+        if (!doc.filePath.isNullOrEmpty()) {
+            val file = File(doc.filePath)
+            if (file.exists() && file.length() > 0L) {
+                return file
+            }
+        }
+        val file = File(documentsDir, "${doc.id}.pdf")
+        if (!file.exists() || file.length() == 0L) {
+            runBlocking(Dispatchers.IO) {
+                val pagesToUse = if (doc.pages.isNotEmpty()) doc.pages else initialSamplePages
+                pdfEngine.createPdfFromPages(pagesToUse, file)
+            }
+        }
+        return file
+    }
+
     fun finishScanAndSave(): DocumentItem {
         val pages = _activeDraftPages.value
         val firstPage = pages.firstOrNull()
+        val docId = "doc-${System.currentTimeMillis()}"
+        val title = "Scan_${System.currentTimeMillis() % 10000}.pdf"
+        val outputFile = File(documentsDir, "$docId.pdf")
+
+        _isProcessing.value = true
+        val generatedFile = runBlocking(Dispatchers.IO) {
+            pdfEngine.createPdfFromPages(pages, outputFile)
+        }
+        _isProcessing.value = false
+
+        val realSize = PdfEngine.formatFileSize(generatedFile.length())
         val newDoc = DocumentItem(
-            id = "doc-${System.currentTimeMillis()}",
-            title = "Scan_${System.currentTimeMillis() % 10000}.pdf",
+            id = docId,
+            title = title,
             date = "Today",
             time = "Just now",
             pageCount = pages.size,
             format = DocFormat.PDF,
-            fileSize = "${(pages.size * 0.8).formatSize()} MB",
+            fileSize = realSize,
             thumbnailRes = firstPage?.drawableRes ?: R.drawable.sample_invoice,
             thumbnailUri = firstPage?.imageUri,
             category = DocCategory.TODAY,
             pages = pages,
-            ocrText = defaultOcrInvoiceText
+            ocrText = defaultOcrInvoiceText,
+            filePath = generatedFile.absolutePath
         )
         _documents.update { listOf(newDoc) + it }
         _selectedDocument.value = newDoc
-        showToast("Document saved to Library")
+        showToast("Document saved to Library ($realSize)")
         return newDoc
     }
 
@@ -376,82 +416,150 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
     fun mergeDocuments(docIds: List<String>, outputTitle: String = "Merged_Document.pdf"): DocumentItem {
         val selected = _documents.value.filter { it.id in docIds }
         val allPages = selected.flatMap { it.pages }
+        val docId = "doc-${System.currentTimeMillis()}"
+        val outputFile = File(documentsDir, "$docId.pdf")
+
+        _isProcessing.value = true
+        val inputUris = selected.map { doc ->
+            val file = ensurePdfFile(doc)
+            Uri.fromFile(file)
+        }
+
+        val mergedFile = runBlocking(Dispatchers.IO) {
+            pdfEngine.mergePdfs(inputUris, outputFile)
+        }
+        _isProcessing.value = false
+
+        val realSize = PdfEngine.formatFileSize(mergedFile.length())
+        val totalPages = selected.sumOf { it.pageCount }.coerceAtLeast(allPages.size).coerceAtLeast(1)
+
         val newDoc = DocumentItem(
-            id = "doc-${System.currentTimeMillis()}",
+            id = docId,
             title = outputTitle,
             date = "Today",
             time = "Just now",
-            pageCount = allPages.size.coerceAtLeast(selected.sumOf { it.pageCount }),
+            pageCount = totalPages,
             format = DocFormat.PDF,
-            fileSize = "4.8 MB",
+            fileSize = realSize,
             thumbnailRes = selected.firstOrNull()?.thumbnailRes ?: R.drawable.sample_invoice,
+            thumbnailUri = selected.firstOrNull()?.thumbnailUri,
             category = DocCategory.TODAY,
-            pages = allPages.ifEmpty { initialSamplePages }
+            pages = allPages.ifEmpty { initialSamplePages },
+            filePath = mergedFile.absolutePath
         )
         _documents.update { listOf(newDoc) + it }
         _selectedDocument.value = newDoc
-        showToast("Merged into $outputTitle")
+        showToast("Merged into $outputTitle ($realSize)")
         return newDoc
     }
 
     fun splitDocument(doc: DocumentItem, splitCuts: List<Int>): List<DocumentItem> {
-        val result = mutableListOf<DocumentItem>()
-        val partsCount = splitCuts.size + 1
-        for (i in 1..partsCount) {
-            val partDoc = DocumentItem(
-                id = "doc-${System.currentTimeMillis()}-$i",
-                title = "${doc.title.substringBeforeLast(".")}_part$i.pdf",
+        val sourceFile = ensurePdfFile(doc)
+        val outputDir = File(documentsDir, "split_${System.currentTimeMillis()}").apply { mkdirs() }
+
+        _isProcessing.value = true
+        val splitFiles = runBlocking(Dispatchers.IO) {
+            pdfEngine.splitPdf(Uri.fromFile(sourceFile), splitCuts, outputDir)
+        }
+        _isProcessing.value = false
+
+        val result = splitFiles.mapIndexed { index, file ->
+            val partNum = index + 1
+            val realSize = PdfEngine.formatFileSize(file.length())
+            DocumentItem(
+                id = "doc-${System.currentTimeMillis()}-$partNum",
+                title = file.name,
                 date = "Today",
                 time = "Just now",
-                pageCount = (doc.pageCount / partsCount).coerceAtLeast(1),
+                pageCount = (doc.pageCount / splitFiles.size.coerceAtLeast(1)).coerceAtLeast(1),
                 format = DocFormat.PDF,
-                fileSize = "1.1 MB",
+                fileSize = realSize,
                 thumbnailRes = doc.thumbnailRes,
+                thumbnailUri = doc.thumbnailUri,
                 category = DocCategory.TODAY,
-                pages = doc.pages.take(2)
+                pages = doc.pages.take(2).ifEmpty { initialSamplePages.take(2) },
+                filePath = file.absolutePath
             )
-            result.add(partDoc)
         }
         _documents.update { result + it }
-        showToast("Split into $partsCount files successfully")
+        showToast("Split into ${result.size} files successfully")
         return result
     }
 
     fun compressDocument(doc: DocumentItem, level: CompressionLevel): DocumentItem {
+        val sourceFile = ensurePdfFile(doc)
+        val docId = "doc-${System.currentTimeMillis()}"
+        val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_compressed.pdf")
+
+        _isProcessing.value = true
+        val compressedFile = runBlocking(Dispatchers.IO) {
+            pdfEngine.compressPdf(Uri.fromFile(sourceFile), level, outputFile)
+        }
+        _isProcessing.value = false
+
+        val realSize = PdfEngine.formatFileSize(compressedFile.length())
         val compressed = doc.copy(
-            id = "doc-${System.currentTimeMillis()}",
-            title = "${doc.title.substringBeforeLast(".")}_compressed.pdf",
-            fileSize = level.estimatedSize.replace(" est.", ""),
-            isCompressed = true
+            id = docId,
+            title = outputFile.name,
+            fileSize = realSize,
+            isCompressed = true,
+            filePath = compressedFile.absolutePath
         )
         _documents.update { listOf(compressed) + it }
         _selectedDocument.value = compressed
-        showToast("Compressed to ${compressed.fileSize} (${level.reductionPercent})")
+        showToast("Compressed to $realSize (${level.reductionPercent})")
         return compressed
     }
 
     fun passwordProtectDocument(doc: DocumentItem, pass: String): DocumentItem {
+        val sourceFile = ensurePdfFile(doc)
+        val docId = "doc-${System.currentTimeMillis()}"
+        val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_protected.pdf")
+
+        _isProcessing.value = true
+        val protectedFile = runBlocking(Dispatchers.IO) {
+            pdfEngine.setPassword(Uri.fromFile(sourceFile), pass, outputFile)
+        }
+        _isProcessing.value = false
+
+        val realSize = PdfEngine.formatFileSize(protectedFile.length())
         val protected = doc.copy(
+            id = docId,
             isProtected = true,
-            password = pass
+            password = pass,
+            fileSize = realSize,
+            filePath = protectedFile.absolutePath
         )
         _documents.update { list ->
             list.map { if (it.id == doc.id) protected else it }
         }
         _selectedDocument.value = protected
-        showToast("Password protection applied")
+        showToast("Password protection applied ($realSize)")
         return protected
     }
 
     fun watermarkDocument(doc: DocumentItem, watermarkText: String, pos: WatermarkPosition, opacity: Float): DocumentItem {
+        val sourceFile = ensurePdfFile(doc)
+        val docId = "doc-${System.currentTimeMillis()}"
+        val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_watermarked.pdf")
+
+        _isProcessing.value = true
+        val watermarkedFile = runBlocking(Dispatchers.IO) {
+            pdfEngine.addWatermark(Uri.fromFile(sourceFile), watermarkText, pos, opacity, outputFile)
+        }
+        _isProcessing.value = false
+
+        val realSize = PdfEngine.formatFileSize(watermarkedFile.length())
         val watermarked = doc.copy(
-            id = "doc-${System.currentTimeMillis()}",
-            title = "${doc.title.substringBeforeLast(".")}_watermarked.pdf",
-            watermark = watermarkText
+            id = docId,
+            title = outputFile.name,
+            watermark = watermarkText,
+            fileSize = realSize,
+            filePath = watermarkedFile.absolutePath
         )
         _documents.update { listOf(watermarked) + it }
         _selectedDocument.value = watermarked
-        showToast("Watermark '$watermarkText' applied")
+        showToast("Watermark '$watermarkText' applied ($realSize)")
         return watermarked
     }
 

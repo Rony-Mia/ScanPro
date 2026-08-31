@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import com.example.data.ScanProViewModel
 import com.example.navigation.ScanProNavGraph
 import com.example.ui.theme.MyApplicationTheme
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 class MainActivity : ComponentActivity() {
 
@@ -19,6 +20,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PDFBoxResourceLoader.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             val isDark by viewModel.darkMode.collectAsState()

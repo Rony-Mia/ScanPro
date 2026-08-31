@@ -48,7 +48,8 @@ data class DocumentItem(
     val password: String = "",
     val watermark: String = "",
     val isCompressed: Boolean = false,
-    val ocrText: String = ""
+    val ocrText: String = "",
+    val filePath: String? = null
 )
 
 enum class WatermarkPosition {
