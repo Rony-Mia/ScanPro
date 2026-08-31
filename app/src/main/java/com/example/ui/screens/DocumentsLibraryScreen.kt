@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +48,7 @@ import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
 import com.example.util.rememberDocumentScannerLauncher
+import com.example.util.rememberFilePickerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +62,11 @@ fun DocumentsLibraryScreen(
     val launchScannerFlow = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
         viewModel.setScannedPagesFromUris(uris)
         onNavigateToScanReview()
+    }
+
+    // Real "import from phone storage" picker (Storage Access Framework).
+    val launchFilePicker = rememberFilePickerLauncher { uris ->
+        viewModel.importDocumentsFromUris(uris)
     }
 
     val documents by viewModel.documents.collectAsState()
@@ -132,6 +139,16 @@ fun DocumentsLibraryScreen(
                 },
                 actions = {
                     if (!isSearchExpanded) {
+                        IconButton(
+                            onClick = launchFilePicker,
+                            modifier = Modifier.testTag("documents_import_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.UploadFile,
+                                contentDescription = "Import from device",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         IconButton(
                             onClick = { isSearchExpanded = true },
                             modifier = Modifier.testTag("documents_search_button")
@@ -317,20 +334,33 @@ fun DocumentsLibraryScreen(
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = launchScannerFlow,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ScanProGreenContainer,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .height(48.dp)
-                            .testTag("empty_library_scan_button")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Scan Document", fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = launchScannerFlow,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ScanProGreenContainer,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("empty_library_scan_button")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scan Document", fontWeight = FontWeight.SemiBold)
+                        }
+                        OutlinedButton(
+                            onClick = launchFilePicker,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("empty_library_import_button")
+                        ) {
+                            Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Import File", fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             } else if (isGridView) {

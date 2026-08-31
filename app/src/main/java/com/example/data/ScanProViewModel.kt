@@ -272,6 +272,76 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
         showToast("Sample documents restored")
     }
 
+    /**
+     * Imports real files the user picked from device storage (via the system
+     * file picker) into the library — copies each into app storage, reads its
+     * real name/size/page count, and adds it as a genuine DocumentItem.
+     * This is what actually powers "Import File" / "Add Files from device"
+     * everywhere in the app, instead of only offering the 5 sample documents.
+     */
+    fun importDocumentsFromUris(uris: List<Uri>, onComplete: ((List<DocumentItem>) -> Unit)? = null) {
+        if (uris.isEmpty()) return
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val importedDocs = mutableListOf<DocumentItem>()
+                var failedCount = 0
+                uris.forEachIndexed { index, uri ->
+                    val info = pdfEngine.importExternalFile(uri, documentsDir)
+                    if (info == null) {
+                        failedCount++
+                        return@forEachIndexed
+                    }
+                    val docId = "doc-${System.currentTimeMillis()}-$index"
+                    val thumbnailUri: String? = when (info.format) {
+                        DocFormat.PDF -> {
+                            val thumbFile = File(documentsDir, "${docId}_thumb.jpg")
+                            pdfEngine.generateThumbnailForPdf(info.file, thumbFile)?.toString()
+                        }
+                        else -> Uri.fromFile(info.file).toString()
+                    }
+                    importedDocs.add(
+                        DocumentItem(
+                            id = docId,
+                            title = info.displayName,
+                            date = "Today",
+                            time = "Just now",
+                            pageCount = info.pageCount,
+                            format = info.format,
+                            fileSize = PdfEngine.formatFileSize(info.file.length()),
+                            thumbnailRes = R.drawable.sample_invoice,
+                            thumbnailUri = thumbnailUri,
+                            category = DocCategory.TODAY,
+                            pages = emptyList(),
+                            filePath = info.file.absolutePath
+                        )
+                    )
+                }
+                if (importedDocs.isNotEmpty()) {
+                    _documents.update { importedDocs + it }
+                }
+                withContext(Dispatchers.Main) {
+                    when {
+                        importedDocs.isNotEmpty() && failedCount == 0 ->
+                            showToast("${importedDocs.size} ${if (importedDocs.size == 1) "file" else "files"} imported")
+                        importedDocs.isNotEmpty() && failedCount > 0 ->
+                            showToast("${importedDocs.size} imported, $failedCount failed")
+                        else ->
+                            showToast("Import failed")
+                    }
+                    onComplete?.invoke(importedDocs)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Import failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     // Active Draft Scanning
     fun selectDraftPageIndex(index: Int) {
         if (index in 0 until _activeDraftPages.value.size) {

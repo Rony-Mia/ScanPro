@@ -34,6 +34,7 @@ import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.example.util.rememberFilePickerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +50,18 @@ fun MergePdfScreen(
         mutableStateOf(allDocs.take(3).map { it.id }.toMutableList())
     }
     var showAddDialog by remember { mutableStateOf(false) }
+
+    // Real "import from phone storage" picker (Storage Access Framework) —
+    // this is what was missing. Newly imported files are added straight into
+    // the merge list.
+    val launchFilePicker = rememberFilePickerLauncher { uris ->
+        viewModel.importDocumentsFromUris(uris) { imported ->
+            if (imported.isNotEmpty()) {
+                selectedDocIds = (selectedDocIds + imported.map { it.id }).toMutableList()
+            }
+        }
+        showAddDialog = false
+    }
 
     Scaffold(
         topBar = {
@@ -327,12 +340,45 @@ fun MergePdfScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 300.dp)
+                        .heightIn(max = 340.dp)
                 ) {
+                    // Real "import from phone storage" option — opens the
+                    // system file picker instead of only offering documents
+                    // already inside the app.
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { launchFilePicker() }
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                                .testTag("merge_import_from_device"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = ScanProGreenContainer)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                "Import from device",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = ScanProGreenContainer
+                            )
+                        }
+                        ScanLineDivider(opacity = 0.25f)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "FROM LIBRARY",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                    }
+
                     val available = allDocs.filterNot { it.id in selectedDocIds }
                     if (available.isEmpty()) {
                         item {
-                            Text("All documents already added", modifier = Modifier.padding(16.dp))
+                            Text("All library documents already added", modifier = Modifier.padding(vertical = 8.dp))
                         }
                     } else {
                         itemsIndexed(available) { _, doc ->
