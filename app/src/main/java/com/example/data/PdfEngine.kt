@@ -16,6 +16,7 @@ import com.example.model.DocFormat
 import com.example.model.ScannedPage
 import com.example.model.WatermarkPosition
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -58,7 +59,8 @@ class PdfEngine(private val context: Context) {
             }
         }
         val stream = openInputStream(uri) ?: throw IllegalArgumentException("Cannot open stream for URI: $uri")
-        return stream.use { PDDocument.load(it) }
+        val bytes = stream.use { it.readBytes() }
+        return PDDocument.load(java.io.ByteArrayInputStream(bytes))
     }
 
     /** Result of importing a real file picked from device storage (SAF). */
@@ -143,27 +145,36 @@ class PdfEngine(private val context: Context) {
     }
 
     /**
-     * Concatenates PDF pages from each input URI into one output PDF using PDDocument page imports.
+     * Concatenates PDF pages from each input URI into one output PDF using PDFMergerUtility.
      */
     suspend fun mergePdfs(inputUris: List<Uri>, outputFile: File): File = withContext(Dispatchers.IO) {
         if (inputUris.isEmpty()) throw IllegalArgumentException("No input URIs provided for merge")
         outputFile.parentFile?.mkdirs()
 
-        val mergedDoc = PDDocument()
+        val merger = PDFMergerUtility()
+        merger.destinationFileName = outputFile.absolutePath
+
+        val tempFilesToClean = mutableListOf<File>()
         try {
             for (uri in inputUris) {
-                val doc = loadDocument(uri)
-                try {
-                    for (i in 0 until doc.numberOfPages) {
-                        mergedDoc.importPage(doc.getPage(i))
+                val path = uri.path
+                if (path != null && File(path).exists()) {
+                    merger.addSource(File(path))
+                } else {
+                    val stream = openInputStream(uri) ?: continue
+                    val tempFile = File.createTempFile("merge_src_", ".pdf", context.cacheDir)
+                    tempFilesToClean.add(tempFile)
+                    FileOutputStream(tempFile).use { out ->
+                        stream.use { inp -> inp.copyTo(out) }
                     }
-                } finally {
-                    doc.close()
+                    merger.addSource(tempFile)
                 }
             }
-            mergedDoc.save(outputFile)
+            merger.mergeDocuments(null)
         } finally {
-            mergedDoc.close()
+            for (temp in tempFilesToClean) {
+                try { temp.delete() } catch (_: Exception) {}
+            }
         }
         outputFile
     }

@@ -32,7 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
+import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.DocThumbnailImage
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
@@ -46,7 +49,28 @@ fun OcrTextScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
-    val doc = selectedDoc ?: return
+    val allDocs by viewModel.documents.collectAsState()
+
+    // If no doc is currently selected, auto-select the first doc from library if present
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Extract Text (OCR)",
+            toolIcon = Icons.Outlined.TextSnippet,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
+
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val isProcessing by viewModel.isProcessing.collectAsState()
@@ -229,9 +253,8 @@ fun OcrTextScreen(
                             .clip(RoundedCornerShape(6.dp))
                             .background(Color.White)
                     ) {
-                        Image(
-                            painter = painterResource(id = doc.thumbnailRes),
-                            contentDescription = null,
+                        DocThumbnailImage(
+                            document = doc,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )

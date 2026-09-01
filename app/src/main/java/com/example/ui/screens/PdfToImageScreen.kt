@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,7 @@ import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 
@@ -44,8 +46,27 @@ fun PdfToImageScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "PDF to Image",
+            toolIcon = Icons.Default.Image,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     var resultImages by remember(doc.id) { mutableStateOf<List<DocumentItem>>(emptyList()) }
 

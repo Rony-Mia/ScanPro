@@ -52,21 +52,21 @@ fun ScanProNavGraph(
     }
 
     var currentBottomTab by remember { mutableStateOf(BottomTab.HOME) }
+    val isOnboardingCompleted by viewModel.isOnboardingCompleted.collectAsState()
+    val initialRoute = remember {
+        if (viewModel.isOnboardingCompleted.value) ScanProRoutes.MAIN else ScanProRoutes.ONBOARDING
+    }
 
     NavHost(
         navController = navController,
-        startDestination = ScanProRoutes.ONBOARDING,
+        startDestination = initialRoute,
         modifier = modifier
     ) {
         // 1. Onboarding Screen
         composable(ScanProRoutes.ONBOARDING) {
             OnboardingScreen(
-                onAllowPermission = {
-                    navController.navigate(ScanProRoutes.MAIN) {
-                        popUpTo(ScanProRoutes.ONBOARDING) { inclusive = true }
-                    }
-                },
-                onSkip = {
+                onFinishOnboarding = {
+                    viewModel.completeOnboarding()
                     navController.navigate(ScanProRoutes.MAIN) {
                         popUpTo(ScanProRoutes.ONBOARDING) { inclusive = true }
                     }

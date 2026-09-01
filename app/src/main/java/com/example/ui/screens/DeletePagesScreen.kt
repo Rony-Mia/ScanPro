@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 
@@ -49,8 +50,27 @@ fun DeletePagesScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Delete Pages",
+            toolIcon = Icons.Default.DeleteForever,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     var thumbnails by remember(doc.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
     var isLoadingThumbs by remember(doc.id) { mutableStateOf(true) }

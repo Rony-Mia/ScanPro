@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -30,7 +31,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
 import com.example.model.DocFormat
+import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
@@ -45,8 +48,27 @@ fun SplitPdfScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Split PDF",
+            toolIcon = Icons.AutoMirrored.Filled.CallSplit,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     val totalPages = doc.pageCount.coerceAtLeast(1)
     var splitCuts by remember(doc.id) { mutableStateOf<Set<Int>>(if (totalPages > 1) setOf(1) else emptySet()) }

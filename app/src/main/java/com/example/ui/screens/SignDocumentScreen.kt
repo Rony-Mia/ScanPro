@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.theme.ScanProGreenContainer
 
 /**
@@ -44,8 +46,27 @@ fun SignDocumentScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Sign Document",
+            toolIcon = Icons.Default.Edit,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     var strokes by remember(doc.id) { mutableStateOf<List<List<Offset>>>(emptyList()) }
     var currentStroke by remember(doc.id) { mutableStateOf<List<Offset>>(emptyList()) }

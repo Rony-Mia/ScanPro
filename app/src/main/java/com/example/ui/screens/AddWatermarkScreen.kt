@@ -29,6 +29,8 @@ import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.model.WatermarkPosition
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.DocThumbnailImage
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 
@@ -41,8 +43,28 @@ fun AddWatermarkScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    // If no doc is currently selected, auto-select the first doc from library if present
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Add Watermark",
+            toolIcon = Icons.Default.SquareFoot,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     var watermarkText by remember { mutableStateOf("CONFIDENTIAL") }
     var selectedPosition by remember { mutableStateOf(WatermarkPosition.DIAGONAL) }
@@ -180,9 +202,8 @@ fun AddWatermarkScreen(
                         WatermarkPosition.CORNER -> Alignment.BottomEnd
                     }
                 ) {
-                    Image(
-                        painter = painterResource(id = doc.thumbnailRes),
-                        contentDescription = "Document preview",
+                    DocThumbnailImage(
+                        document = doc,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )

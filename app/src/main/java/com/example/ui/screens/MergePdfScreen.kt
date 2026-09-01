@@ -6,16 +6,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.CallMerge
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,18 +50,30 @@ fun MergePdfScreen(
 ) {
     val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    var selectedDocIds by remember(allDocs) {
-        mutableStateOf(allDocs.take(3).map { it.id }.toMutableList())
-    }
-    var showAddDialog by remember { mutableStateOf(false) }
+    val currentlySelectedDoc by viewModel.selectedDocument.collectAsState()
 
-    // Real "import from phone storage" picker (Storage Access Framework) —
-    // this is what was missing. Newly imported files are added straight into
-    // the merge list.
+    // Initialize selection with currently viewed document or first available documents
+    var selectedDocIds by remember {
+        val list = mutableListOf<String>()
+        if (currentlySelectedDoc != null) {
+            list.add(currentlySelectedDoc!!.id)
+            val other = allDocs.firstOrNull { it.id != currentlySelectedDoc!!.id }
+            if (other != null) list.add(other.id)
+        } else {
+            list.addAll(allDocs.take(2).map { it.id })
+        }
+        mutableStateOf<List<String>>(list)
+    }
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var mergedFileName by remember { mutableStateOf("Merged_Document.pdf") }
+    var showRenameDialog by remember { mutableStateOf(false) }
+
     val launchFilePicker = rememberFilePickerLauncher { uris ->
         viewModel.importDocumentsFromUris(uris) { imported ->
             if (imported.isNotEmpty()) {
-                selectedDocIds = (selectedDocIds + imported.map { it.id }).toMutableList()
+                val newIds = imported.map { it.id }
+                selectedDocIds = (selectedDocIds + newIds).distinct()
             }
         }
         showAddDialog = false
@@ -130,21 +146,23 @@ fun MergePdfScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val canMerge = selectedDocIds.size >= 2 && !isProcessing
                     Button(
                         onClick = {
                             if (selectedDocIds.size >= 2) {
-                                viewModel.mergeDocuments(selectedDocIds) { merged ->
+                                viewModel.mergeDocuments(selectedDocIds, outputTitle = mergedFileName) { merged ->
                                     onMergeCompleted(merged)
                                 }
                             } else {
-                                viewModel.showToast("Select at least 2 files to merge")
+                                viewModel.showToast("Please add at least 2 PDF files to merge")
+                                showAddDialog = true
                             }
                         },
                         enabled = !isProcessing,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
                             contentColor = Color.White,
-                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.6f),
+                            disabledContainerColor = ScanProGreenContainer.copy(alpha = 0.5f),
                             disabledContentColor = Color.White
                         ),
                         shape = RoundedCornerShape(10.dp),
@@ -166,8 +184,14 @@ fun MergePdfScreen(
                                 fontWeight = FontWeight.Bold
                             )
                         } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.CallMerge,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Merge Now",
+                                text = if (selectedDocIds.size >= 2) "Merge ${selectedDocIds.size} PDFs" else "Select at least 2 files",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -188,7 +212,7 @@ fun MergePdfScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "100% on your device — files never leave your phone.",
+                            text = "100% on your device — offline & secure",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -206,124 +230,317 @@ fun MergePdfScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            Text(
-                text = "Order of documents (${selectedDocIds.size} files):",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Output file name banner
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showRenameDialog = true }
+                    .padding(bottom = 12.dp)
             ) {
-                itemsIndexed(selectedDocIds) { index, docId ->
-                    val doc = allDocs.find { it.id == docId }
-                    if (doc != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Output File Name",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = mergedFileName,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Name",
+                        tint = ScanProGreenContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            if (selectedDocIds.isEmpty()) {
+                // Empty State Prompt
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(ScanProGreenContainer.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.CallMerge,
+                                contentDescription = null,
+                                tint = ScanProGreenContainer,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No PDF files selected",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Add 2 or more PDF documents from your phone storage or library to combine them in your chosen order.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { launchFilePicker() },
+                            colors = ButtonDefaults.buttonColors(containerColor = ScanProGreenContainer),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Outlined.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Import PDFs from Device", fontWeight = FontWeight.Bold)
+                        }
+                        if (allDocs.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { showAddDialog = true },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Outlined.LibraryBooks, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Choose from Library")
+                            }
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Merge Order (${selectedDocIds.size} files):",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (selectedDocIds.size == 1) {
+                        Text(
+                            text = "Need 1 more file",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ScanProAccentRed
+                        )
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(selectedDocIds) { index, docId ->
+                        val doc = allDocs.find { it.id == docId }
+                        if (doc != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Order Number Badge
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(ScanProGreenContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    // PDF Icon Badge
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(ScanProAccentRed.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PictureAsPdf,
+                                            contentDescription = "PDF",
+                                            tint = ScanProAccentRed,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = doc.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${doc.pageCount} pages • ${doc.fileSize}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    // Move up / down arrows
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                if (index > 0) {
+                                                    val list = selectedDocIds.toMutableList()
+                                                    val item = list.removeAt(index)
+                                                    list.add(index - 1, item)
+                                                    selectedDocIds = list
+                                                }
+                                            },
+                                            enabled = index > 0,
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "Move Up",
+                                                tint = if (index > 0) MaterialTheme.colorScheme.onSurfaceVariant else Color.LightGray
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                if (index < selectedDocIds.size - 1) {
+                                                    val list = selectedDocIds.toMutableList()
+                                                    val item = list.removeAt(index)
+                                                    list.add(index + 1, item)
+                                                    selectedDocIds = list
+                                                }
+                                            },
+                                            enabled = index < selectedDocIds.size - 1,
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "Move Down",
+                                                tint = if (index < selectedDocIds.size - 1) MaterialTheme.colorScheme.onSurfaceVariant else Color.LightGray
+                                            )
+                                        }
+
+                                        // Remove button
+                                        IconButton(
+                                            onClick = {
+                                                val list = selectedDocIds.toMutableList()
+                                                list.removeAt(index)
+                                                selectedDocIds = list
+                                            },
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Remove",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Add another file row
+                    item {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.Transparent,
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                ScanProGreenContainer.copy(alpha = 0.5f)
                             ),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAddDialog = true }
+                                .padding(vertical = 4.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(12.dp),
+                                horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // PDF Icon Badge
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(ScanProAccentRed.copy(alpha = 0.12f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PictureAsPdf,
-                                        contentDescription = "PDF",
-                                        tint = ScanProAccentRed,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = doc.title,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "${doc.pageCount} pages • ${doc.fileSize}",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                // Move up / down arrows
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (index > 0) {
-                                        IconButton(
-                                            onClick = {
-                                                val list = selectedDocIds.toMutableList()
-                                                val item = list.removeAt(index)
-                                                list.add(index - 1, item)
-                                                selectedDocIds = list
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.KeyboardArrowUp,
-                                                contentDescription = "Move Up",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                    if (index < selectedDocIds.size - 1) {
-                                        IconButton(
-                                            onClick = {
-                                                val list = selectedDocIds.toMutableList()
-                                                val item = list.removeAt(index)
-                                                list.add(index + 1, item)
-                                                selectedDocIds = list
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.KeyboardArrowDown,
-                                                contentDescription = "Move Down",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-
-                                    // Remove button
-                                    IconButton(
-                                        onClick = {
-                                            val list = selectedDocIds.toMutableList()
-                                            list.removeAt(index)
-                                            selectedDocIds = list
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Remove",
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = ScanProGreenContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Add Another PDF",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ScanProGreenContainer
+                                )
                             }
                         }
                     }
@@ -342,31 +559,38 @@ fun MergePdfScreen(
                         .fillMaxWidth()
                         .heightIn(max = 340.dp)
                 ) {
-                    // Real "import from phone storage" option — opens the
-                    // system file picker instead of only offering documents
-                    // already inside the app.
                     item {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ScanProGreenContainer.copy(alpha = 0.08f))
                                 .clickable { launchFilePicker() }
-                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                                .padding(vertical = 12.dp, horizontal = 12.dp)
                                 .testTag("merge_import_from_device"),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = ScanProGreenContainer)
+                            Icon(Icons.Outlined.FileOpen, contentDescription = null, tint = ScanProGreenContainer)
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                "Import from device",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                                color = ScanProGreenContainer
-                            )
+                            Column {
+                                Text(
+                                    "Import from phone storage",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = ScanProGreenContainer
+                                )
+                                Text(
+                                    "Pick any PDF file on your device",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.height(10.dp))
                         ScanLineDivider(opacity = 0.25f)
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            "FROM LIBRARY",
+                            "FROM SCANPRO LIBRARY",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp,
@@ -378,17 +602,21 @@ fun MergePdfScreen(
                     val available = allDocs.filterNot { it.id in selectedDocIds }
                     if (available.isEmpty()) {
                         item {
-                            Text("All library documents already added", modifier = Modifier.padding(vertical = 8.dp))
+                            Text(
+                                "No additional library documents found. Use 'Import from phone storage' above.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
                         }
                     } else {
                         itemsIndexed(available) { _, doc ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
                                     .clickable {
-                                        val list = selectedDocIds.toMutableList()
-                                        list.add(doc.id)
-                                        selectedDocIds = list
+                                        selectedDocIds = (selectedDocIds + doc.id).distinct()
                                         showAddDialog = false
                                     }
                                     .padding(vertical = 10.dp, horizontal = 4.dp),
@@ -396,10 +624,11 @@ fun MergePdfScreen(
                             ) {
                                 Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = ScanProAccentRed)
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(doc.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("${doc.pageCount} pages", fontSize = 11.sp, color = Color.Gray)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(doc.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${doc.pageCount} pages • ${doc.fileSize}", fontSize = 11.sp, color = Color.Gray)
                                 }
+                                Icon(Icons.Default.Add, contentDescription = "Add", tint = ScanProGreenContainer, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -408,6 +637,40 @@ fun MergePdfScreen(
             confirmButton = {
                 TextButton(onClick = { showAddDialog = false }) {
                     Text("Close")
+                }
+            }
+        )
+    }
+
+    if (showRenameDialog) {
+        var tempName by remember(mergedFileName) { mutableStateOf(mergedFileName) }
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Output PDF Name") },
+            text = {
+                OutlinedTextField(
+                    value = tempName,
+                    onValueChange = { tempName = it },
+                    label = { Text("File Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (tempName.isNotBlank()) {
+                            mergedFileName = if (tempName.endsWith(".pdf", ignoreCase = true)) tempName else "$tempName.pdf"
+                        }
+                        showRenameDialog = false
+                    }
+                ) {
+                    Text("Save", color = ScanProGreenContainer, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

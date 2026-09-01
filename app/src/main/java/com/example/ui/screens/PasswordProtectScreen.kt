@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
+import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProError
@@ -43,8 +44,27 @@ fun PasswordProtectScreen(
     modifier: Modifier = Modifier
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
+    val allDocs by viewModel.documents.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
-    val doc = selectedDoc ?: return
+
+    LaunchedEffect(selectedDoc, allDocs) {
+        if (selectedDoc == null && allDocs.isNotEmpty()) {
+            viewModel.selectDocument(allDocs.first())
+        }
+    }
+
+    val doc = selectedDoc
+    if (doc == null) {
+        NoDocSelectedScaffold(
+            toolTitle = "Password Protect",
+            toolIcon = Icons.Default.Lock,
+            viewModel = viewModel,
+            onBack = onBack,
+            onDocumentSelected = { viewModel.selectDocument(it) },
+            modifier = modifier
+        )
+        return
+    }
 
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }

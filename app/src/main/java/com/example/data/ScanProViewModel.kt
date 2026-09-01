@@ -22,6 +22,15 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     private val pdfEngine = PdfEngine(application)
     private val ocrEngine = OcrEngine(application)
     private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
+    private val prefs = application.getSharedPreferences("scanpro_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _isOnboardingCompleted = MutableStateFlow(prefs.getBoolean("is_onboarding_completed", false))
+    val isOnboardingCompleted: StateFlow<Boolean> = _isOnboardingCompleted.asStateFlow()
+
+    fun completeOnboarding() {
+        prefs.edit().putBoolean("is_onboarding_completed", true).apply()
+        _isOnboardingCompleted.value = true
+    }
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
@@ -440,10 +449,21 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         onComplete: ((DocumentItem) -> Unit)? = null
     ) {
         if (_isProcessing.value) return
+        if (docIds.size < 2) {
+            showToast("Please select at least 2 files to merge")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
             try {
-                val selected = _documents.value.filter { it.id in docIds }
+                // Preserve exact order from docIds
+                val selected = docIds.mapNotNull { id -> _documents.value.find { it.id == id } }
+                if (selected.size < 2) {
+                    withContext(Dispatchers.Main) {
+                        showToast("Could not locate at least 2 documents to merge")
+                    }
+                    return@launch
+                }
                 val allPages = selected.flatMap { it.pages }
                 val docId = "doc-${System.currentTimeMillis()}"
                 val outputFile = File(documentsDir, "$docId.pdf")
@@ -457,9 +477,13 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 val realSize = PdfEngine.formatFileSize(mergedFile.length())
                 val totalPages = selected.sumOf { it.pageCount }.coerceAtLeast(allPages.size).coerceAtLeast(1)
 
+                val safeTitle = if (outputTitle.isNotBlank()) {
+                    if (outputTitle.endsWith(".pdf", ignoreCase = true)) outputTitle else "$outputTitle.pdf"
+                } else "Merged_${System.currentTimeMillis() % 10000}.pdf"
+
                 val newDoc = DocumentItem(
                     id = docId,
-                    title = outputTitle,
+                    title = safeTitle,
                     date = "Today",
                     time = "Just now",
                     pageCount = totalPages,
@@ -474,7 +498,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(newDoc) + it }
                 _selectedDocument.value = newDoc
                 withContext(Dispatchers.Main) {
-                    showToast("Merged into $outputTitle ($realSize)")
+                    showToast("Merged into $safeTitle ($realSize)")
                     onComplete?.invoke(newDoc)
                 }
             } catch (e: Exception) {
