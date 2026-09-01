@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ViewList
@@ -398,12 +399,29 @@ fun DocumentsLibraryScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color.White)
                                 ) {
-                                    AsyncImage(
-                                        model = doc.thumbnailUri ?: doc.thumbnailRes,
-                                        contentDescription = doc.title,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
+                                    val thumbModel: Any? = when {
+                                        !doc.thumbnailUri.isNullOrEmpty() -> doc.thumbnailUri
+                                        !doc.filePath.isNullOrEmpty() && doc.format == DocFormat.JPG -> java.io.File(doc.filePath)
+                                        doc.thumbnailRes != 0 -> doc.thumbnailRes
+                                        else -> null
+                                    }
+                                    if (thumbModel != null) {
+                                        AsyncImage(
+                                            model = thumbModel,
+                                            contentDescription = doc.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = doc.title,
+                                            tint = ScanProGreenContainer,
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .align(Alignment.Center)
+                                        )
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.BottomEnd)

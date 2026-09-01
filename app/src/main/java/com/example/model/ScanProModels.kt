@@ -1,7 +1,6 @@
 package com.example.model
 
 import androidx.annotation.DrawableRes
-import com.example.R
 
 enum class DocFormat {
     PDF, JPG, OCR
@@ -14,7 +13,7 @@ enum class DocCategory {
 data class ScannedPage(
     val id: String,
     val pageNumber: Int,
-    @DrawableRes val drawableRes: Int = R.drawable.sample_invoice,
+    @DrawableRes val drawableRes: Int = 0,
     val imageUri: String? = null,
     val rotationAngle: Float = 0f,
     val filter: PageFilter = PageFilter.ORIGINAL,
@@ -40,7 +39,7 @@ data class DocumentItem(
     val pageCount: Int,
     val format: DocFormat,
     val fileSize: String,
-    @DrawableRes val thumbnailRes: Int = R.drawable.sample_invoice,
+    @DrawableRes val thumbnailRes: Int = 0,
     val thumbnailUri: String? = null,
     val category: DocCategory = DocCategory.TODAY,
     val pages: List<ScannedPage> = emptyList(),

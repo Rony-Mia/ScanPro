@@ -23,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -35,6 +36,7 @@ import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.example.util.ShareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +47,7 @@ fun OcrTextScreen(
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
     val doc = selectedDoc ?: return
+    val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val isProcessing by viewModel.isProcessing.collectAsState()
     val ocrProgress by viewModel.ocrProgress.collectAsState()
@@ -123,7 +126,14 @@ fun OcrTextScreen(
                         )
                     }
                     IconButton(
-                        onClick = { viewModel.showToast("Sharing extracted text...") }
+                        onClick = {
+                            ShareUtil.shareText(
+                                context = context,
+                                text = extractedText,
+                                subject = "Extracted text - ${doc.title}"
+                            )
+                        },
+                        modifier = Modifier.testTag("ocr_share_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,

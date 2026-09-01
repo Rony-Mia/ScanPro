@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.annotation.DrawableRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.R
 import com.example.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -35,143 +34,16 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         ocrEngine.close()
     }
 
-    private val initialSamplePages = listOf(
-        ScannedPage(
-            id = "p1",
-            pageNumber = 1,
-            drawableRes = R.drawable.sample_invoice
-        ),
-        ScannedPage(
-            id = "p2",
-            pageNumber = 2,
-            drawableRes = R.drawable.sample_blueprint,
-            filter = PageFilter.GRAYSCALE
-        ),
-        ScannedPage(
-            id = "p3",
-            pageNumber = 3,
-            drawableRes = R.drawable.sample_spreadsheet
-        ),
-        ScannedPage(
-            id = "p4",
-            pageNumber = 4,
-            drawableRes = R.drawable.sample_contract
-        )
-    )
-
-    private val defaultOcrInvoiceText = """
-GLOBE DYNAMICS SOLUTIONS
-INVOICE
-
-120 Business Park Drive, Suite 300, London,
-UK EC2A 4AB | +44 20 7123 4567
-
-Invoice Date: October 15, 2023
-Invoice #: GD-98765
-
-BILL TO:
-Client: Apex Marketing Group
-45 Innovation Ave
-Manchester, UK M1 6BP
-
-SHIP TO:
-Same as Bill To
-
-Item Code | Description | Quantity | Unit Price | Total
--------------------------------------------------------
-1. GD-WD-01 | Website Development | 60 | £75.00 | £4,500.00
-2. GD-SMM-03 | Social Media Mgmt - 1 Month | 1 | £1,500.00 | £1,500.00
-3. GD-CW-05 | Content Writing - 20 hrs | 20 | £65.00 | £1,300.00
-4. GD-GD-02 | Graphic Design - 15 hrs | 15 | £70.00 | £1,050.00
-5. GD-MH-04 | Web Hosting - 1 Year | 1 | £300.00 | £300.00
-
-Subtotal: £8,650.00
-VAT (20%): £1,730.00
-Total Due: £10,380.00
-
-Payment Terms: Net 30
-Due Date: November 14, 2023
-
-Bank Details | Barclays Bank | Sort Code: 20-45-67 | Account: 12345678
-
-THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
-    """.trimIndent()
-
-    private val defaultDocuments = listOf(
-        DocumentItem(
-            id = "doc-1",
-            title = "Invoice_2023_10.pdf",
-            date = "Oct 24",
-            time = "10:42 AM",
-            pageCount = 3,
-            format = DocFormat.PDF,
-            fileSize = "2.4 MB",
-            thumbnailRes = R.drawable.sample_invoice,
-            category = DocCategory.TODAY,
-            pages = initialSamplePages.take(3),
-            ocrText = defaultOcrInvoiceText
-        ),
-        DocumentItem(
-            id = "doc-2",
-            title = "Blueprint_V2_Final.jpg",
-            date = "Oct 22",
-            time = "09:15 AM",
-            pageCount = 1,
-            format = DocFormat.JPG,
-            fileSize = "1.8 MB",
-            thumbnailRes = R.drawable.sample_blueprint,
-            category = DocCategory.TODAY,
-            pages = listOf(initialSamplePages[1])
-        ),
-        DocumentItem(
-            id = "doc-3",
-            title = "Expense_Report_Q3.pdf",
-            date = "Oct 15",
-            time = "04:30 PM",
-            pageCount = 4,
-            format = DocFormat.OCR,
-            fileSize = "4.1 MB",
-            thumbnailRes = R.drawable.sample_spreadsheet,
-            category = DocCategory.TODAY,
-            pages = initialSamplePages,
-            ocrText = "Quarterly Expense Summary\nTotal Expenses: $42,500.00\nDepartment: Operations & Engineering"
-        ),
-        DocumentItem(
-            id = "doc-4",
-            title = "NDA_TechCorp_Final.pdf",
-            date = "Yesterday",
-            time = "02:10 PM",
-            pageCount = 4,
-            format = DocFormat.PDF,
-            fileSize = "3.2 MB",
-            thumbnailRes = R.drawable.sample_contract,
-            category = DocCategory.YESTERDAY,
-            pages = initialSamplePages
-        ),
-        DocumentItem(
-            id = "doc-5",
-            title = "Q3_Financial_Report_Final.pdf",
-            date = "Oct 10",
-            time = "11:20 AM",
-            pageCount = 4,
-            format = DocFormat.PDF,
-            fileSize = "2.4 MB",
-            thumbnailRes = R.drawable.sample_invoice,
-            category = DocCategory.EARLIER,
-            pages = initialSamplePages
-        )
-    )
-
-    private val _documents = MutableStateFlow<List<DocumentItem>>(defaultDocuments)
+    private val _documents = MutableStateFlow<List<DocumentItem>>(emptyList())
     val documents: StateFlow<List<DocumentItem>> = _documents.asStateFlow()
 
-    private val _activeDraftPages = MutableStateFlow<List<ScannedPage>>(initialSamplePages)
+    private val _activeDraftPages = MutableStateFlow<List<ScannedPage>>(emptyList())
     val activeDraftPages: StateFlow<List<ScannedPage>> = _activeDraftPages.asStateFlow()
 
     private val _selectedDraftIndex = MutableStateFlow(0)
     val selectedDraftIndex: StateFlow<Int> = _selectedDraftIndex.asStateFlow()
 
-    private val _selectedDocument = MutableStateFlow<DocumentItem?>(defaultDocuments.first())
+    private val _selectedDocument = MutableStateFlow<DocumentItem?>(null)
     val selectedDocument: StateFlow<DocumentItem?> = _selectedDocument.asStateFlow()
 
     // Document persistence: the library used to live only in memory (MutableStateFlow),
@@ -290,12 +162,6 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
         showToast("Library cleared")
     }
 
-    fun resetDefaultDocuments() {
-        _documents.value = defaultDocuments
-        _selectedDocument.value = defaultDocuments.first()
-        showToast("Sample documents restored")
-    }
-
     /**
      * Imports real files the user picked from device storage (via the system
      * file picker) into the library — copies each into app storage, reads its
@@ -334,7 +200,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                             pageCount = info.pageCount,
                             format = info.format,
                             fileSize = PdfEngine.formatFileSize(info.file.length()),
-                            thumbnailRes = R.drawable.sample_invoice,
+                            thumbnailRes = 0,
                             thumbnailUri = thumbnailUri,
                             category = DocCategory.TODAY,
                             pages = emptyList(),
@@ -398,7 +264,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
     }
 
     fun addPageToDraft(
-        @DrawableRes res: Int = R.drawable.sample_invoice,
+        @DrawableRes res: Int = 0,
         imageUri: String? = null
     ) {
         val pages = _activeDraftPages.value.toMutableList()
@@ -421,7 +287,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                 id = UUID.randomUUID().toString(),
                 pageNumber = index + 1,
                 imageUri = uri.toString(),
-                drawableRes = R.drawable.sample_invoice
+                drawableRes = 0
             )
         }
         _activeDraftPages.value = newPages
@@ -439,7 +305,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                     id = UUID.randomUUID().toString(),
                     pageNumber = startIndex + index + 1,
                     imageUri = uri.toString(),
-                    drawableRes = R.drawable.sample_invoice
+                    drawableRes = 0
                 )
             )
         }
@@ -464,18 +330,59 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
     }
 
     private suspend fun ensurePdfFileInternal(doc: DocumentItem): File = withContext(Dispatchers.IO) {
+        // If doc is a JPG image, convert it to a real single-page PDF and cache it
+        if (doc.format == DocFormat.JPG) {
+            val convertedFile = File(documentsDir, "${doc.id}_converted.pdf")
+            if (convertedFile.exists() && convertedFile.length() > 0L) {
+                return@withContext convertedFile
+            }
+            val imageUri: Uri? = when {
+                !doc.filePath.isNullOrEmpty() -> Uri.fromFile(File(doc.filePath))
+                !doc.thumbnailUri.isNullOrEmpty() -> Uri.parse(doc.thumbnailUri)
+                doc.pages.isNotEmpty() && !doc.pages.first().imageUri.isNullOrEmpty() -> Uri.parse(doc.pages.first().imageUri)
+                else -> null
+            }
+            if (imageUri != null) {
+                return@withContext pdfEngine.imagesToPdf(listOf(imageUri), convertedFile)
+            }
+        }
+
+        // If doc is a PDF with a valid existing file path, return it directly
         if (!doc.filePath.isNullOrEmpty()) {
             val file = File(doc.filePath)
             if (file.exists() && file.length() > 0L) {
                 return@withContext file
             }
         }
+
+        // Otherwise build from pages or thumbnail
         val file = File(documentsDir, "${doc.id}.pdf")
         if (!file.exists() || file.length() == 0L) {
-            val pagesToUse = if (doc.pages.isNotEmpty()) doc.pages else initialSamplePages
-            pdfEngine.createPdfFromPages(pagesToUse, file)
+            if (doc.pages.isNotEmpty()) {
+                pdfEngine.createPdfFromPages(doc.pages, file)
+            } else if (!doc.thumbnailUri.isNullOrEmpty()) {
+                pdfEngine.imagesToPdf(listOf(Uri.parse(doc.thumbnailUri)), file)
+            } else {
+                pdfEngine.createEmptyPdf(file)
+            }
         }
         file
+    }
+
+    /**
+     * Renders a specific page of [doc] directly from its file to a Bitmap for the PDF Viewer.
+     */
+    suspend fun renderPdfPage(doc: DocumentItem, pageIndex: Int): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val file = if (doc.format == DocFormat.PDF && !doc.filePath.isNullOrEmpty() && File(doc.filePath).exists()) {
+                File(doc.filePath)
+            } else {
+                ensurePdfFileInternal(doc)
+            }
+            pdfEngine.renderPdfPageToBitmap(file, pageIndex)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun finishScanAndSave(onComplete: ((DocumentItem) -> Unit)? = null) {
@@ -503,11 +410,11 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                     pageCount = pages.size,
                     format = DocFormat.PDF,
                     fileSize = realSize,
-                    thumbnailRes = firstPage?.drawableRes ?: R.drawable.sample_invoice,
+                    thumbnailRes = firstPage?.drawableRes ?: 0,
                     thumbnailUri = firstPage?.imageUri,
                     category = DocCategory.TODAY,
                     pages = pages,
-                    ocrText = defaultOcrInvoiceText,
+                    ocrText = "",
                     filePath = generatedFile.absolutePath
                 )
                 _documents.update { listOf(newDoc) + it }
@@ -558,10 +465,10 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                     pageCount = totalPages,
                     format = DocFormat.PDF,
                     fileSize = realSize,
-                    thumbnailRes = selected.firstOrNull()?.thumbnailRes ?: R.drawable.sample_invoice,
+                    thumbnailRes = selected.firstOrNull()?.thumbnailRes ?: 0,
                     thumbnailUri = selected.firstOrNull()?.thumbnailUri,
                     category = DocCategory.TODAY,
-                    pages = allPages.ifEmpty { initialSamplePages },
+                    pages = allPages,
                     filePath = mergedFile.absolutePath
                 )
                 _documents.update { listOf(newDoc) + it }
@@ -607,7 +514,7 @@ THANK YOU FOR YOUR BUSINESS! | www.globedynamics.co.uk
                         thumbnailRes = doc.thumbnailRes,
                         thumbnailUri = doc.thumbnailUri,
                         category = DocCategory.TODAY,
-                        pages = doc.pages.take(2).ifEmpty { initialSamplePages.take(2) },
+                        pages = emptyList(),
                         filePath = file.absolutePath
                     )
                 }

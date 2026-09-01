@@ -2,6 +2,8 @@ package com.example.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import com.google.mlkit.vision.common.InputImage
@@ -66,6 +68,8 @@ class OcrEngine(@Suppress("UNUSED_PARAMETER") context: Context) {
                     page.height * 2,
                     Bitmap.Config.ARGB_8888
                 )
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 page.close()
 

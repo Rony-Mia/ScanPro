@@ -254,12 +254,6 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.resetDefaultDocuments() }
-                        ) {
-                            Text("Load Sample Documents")
-                        }
                     }
                 }
             } else {

@@ -232,30 +232,16 @@ fun SettingsScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                OutlinedButton(
+                    onClick = { viewModel.clearAllDocumentsForEmptyState() },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = ScanProAccentRed
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_clear_docs_button")
                 ) {
-                    OutlinedButton(
-                        onClick = { viewModel.clearAllDocumentsForEmptyState() },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = ScanProAccentRed
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("settings_clear_docs_button")
-                    ) {
-                        Text("Clear All Docs", fontSize = 12.sp)
-                    }
-
-                    OutlinedButton(
-                        onClick = { viewModel.resetDefaultDocuments() },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("settings_restore_docs_button")
-                    ) {
-                        Text("Restore Samples", fontSize = 12.sp)
-                    }
+                    Text("Clear All Documents", fontSize = 13.sp)
                 }
             }
 

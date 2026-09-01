@@ -4,6 +4,8 @@ import android.content.Context
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix as AndroidMatrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -596,6 +598,8 @@ class PdfEngine(private val context: Context) {
             val width = page.width * 2
             val height = page.height * 2
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.WHITE)
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
             page.close()
             renderer.close()
@@ -631,6 +635,16 @@ class PdfEngine(private val context: Context) {
         val newHeight = (originalHeight * scale).toInt().coerceAtLeast(1)
 
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    fun createEmptyPdf(outputFile: File): File {
+        outputFile.parentFile?.mkdirs()
+        PDDocument().use { doc ->
+            val page = PDPage(PDRectangle.A4)
+            doc.addPage(page)
+            doc.save(outputFile)
+        }
+        return outputFile
     }
 
     companion object {

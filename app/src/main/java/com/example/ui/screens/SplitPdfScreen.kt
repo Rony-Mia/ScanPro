@@ -1,17 +1,18 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,20 +20,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
+import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
-import com.example.model.DocumentItem
+import com.example.model.DocFormat
 import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,16 +48,15 @@ fun SplitPdfScreen(
     val isProcessing by viewModel.isProcessing.collectAsState()
     val doc = selectedDoc ?: return
 
-    val totalPages = doc.pageCount.coerceAtLeast(4)
-    // List of split cut positions (between page X and X+1)
-    var splitCuts by remember { mutableStateOf(setOf(1, 3)) }
+    val totalPages = doc.pageCount.coerceAtLeast(1)
+    var splitCuts by remember(doc.id) { mutableStateOf<Set<Int>>(if (totalPages > 1) setOf(1) else emptySet()) }
+    var pageBitmaps by remember(doc.id) { mutableStateOf<List<Bitmap>>(emptyList()) }
 
-    val sampleDrawables = listOf(
-        R.drawable.sample_invoice,
-        R.drawable.sample_blueprint,
-        R.drawable.sample_spreadsheet,
-        R.drawable.sample_contract
-    )
+    LaunchedEffect(doc.id) {
+        viewModel.loadPageThumbnails(doc) { bitmaps ->
+            pageBitmaps = bitmaps
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -117,7 +118,7 @@ fun SplitPdfScreen(
                                 onSplitCompleted()
                             }
                         },
-                        enabled = !isProcessing,
+                        enabled = !isProcessing && splitCuts.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ScanProGreenContainer,
                             contentColor = Color.White,
@@ -144,7 +145,7 @@ fun SplitPdfScreen(
                             )
                         } else {
                             Text(
-                                text = "Split into $partsCount Files",
+                                text = if (splitCuts.isEmpty()) "Select Split Points" else "Split into $partsCount Files",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -226,7 +227,8 @@ fun SplitPdfScreen(
             ) {
                 items(totalPages) { pageIdx ->
                     val pageNum = pageIdx + 1
-                    val thumbRes = sampleDrawables[pageIdx % sampleDrawables.size]
+                    val pageBitmap = pageBitmaps.getOrNull(pageIdx)
+                    val draftPage = doc.pages.getOrNull(pageIdx)
 
                     // Page Card
                     Box(
@@ -234,14 +236,52 @@ fun SplitPdfScreen(
                             .size(width = 110.dp, height = 160.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.White)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Image(
-                            painter = painterResource(id = thumbRes),
-                            contentDescription = "Page $pageNum",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        when {
+                            pageBitmap != null -> {
+                                Image(
+                                    bitmap = pageBitmap.asImageBitmap(),
+                                    contentDescription = "Page $pageNum",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            draftPage != null && !draftPage.imageUri.isNullOrEmpty() -> {
+                                AsyncImage(
+                                    model = draftPage.imageUri,
+                                    contentDescription = "Page $pageNum",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            doc.format == DocFormat.JPG && !doc.filePath.isNullOrEmpty() -> {
+                                AsyncImage(
+                                    model = File(doc.filePath),
+                                    contentDescription = "Page $pageNum",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            !doc.thumbnailUri.isNullOrEmpty() -> {
+                                AsyncImage(
+                                    model = doc.thumbnailUri,
+                                    contentDescription = "Page $pageNum",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = ScanProGreenContainer,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
@@ -314,7 +354,7 @@ fun SplitPdfScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${splitCuts.size} splits selected (${splitCuts.size + 1} independent PDF files will be generated)",
+                        text = if (splitCuts.isEmpty()) "Tap on any scissors icon above to set split points" else "${splitCuts.size} splits selected (${splitCuts.size + 1} independent PDF files will be generated)",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = ScanProGreenContainer

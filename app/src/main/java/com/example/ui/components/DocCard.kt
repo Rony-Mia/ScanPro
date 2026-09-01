@@ -77,12 +77,29 @@ fun DocCard(
                         RoundedCornerShape(6.dp)
                     )
             ) {
-                AsyncImage(
-                    model = document.thumbnailUri ?: document.thumbnailRes,
-                    contentDescription = document.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                val thumbModel: Any? = when {
+                    !document.thumbnailUri.isNullOrEmpty() -> document.thumbnailUri
+                    !document.filePath.isNullOrEmpty() && document.format == DocFormat.JPG -> java.io.File(document.filePath)
+                    document.thumbnailRes != 0 -> document.thumbnailRes
+                    else -> null
+                }
+                if (thumbModel != null) {
+                    AsyncImage(
+                        model = thumbModel,
+                        contentDescription = document.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = document.title,
+                        tint = ScanProGreenContainer,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .align(Alignment.Center)
+                    )
+                }
                 // Format badge
                 Box(
                     modifier = Modifier
