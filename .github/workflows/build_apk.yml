@@ -5,6 +5,9 @@ on:
   push:
     branches: [ "main" ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,21 +21,33 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # নতুন অংশ: এটি নিজে থেকেই আপনার অ্যাপের জন্য প্রয়োজনীয় debug.keystore ফাইলটি বানিয়ে দেবে
-    - name: Generate Dummy Debug Keystore
-      run: |
-        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: wrapper
 
+    # versionCode is tied to the CI run number so every build is uniquely
+    # numbered and monotonically increasing -- the in-app update checker
+    # compares against this to know a new build is available.
     - name: Build Debug APK
-      run: gradle assembleDebug
-      
-    - name: Upload APK
+      run: gradle assembleDebug -PappVersionCode=${{ github.run_number }} -PappVersionName="1.0.${{ github.run_number }}"
+
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: ScanPro-App
         path: app/build/outputs/apk/debug/*.apk
+
+    # Publishes a permanent, publicly-downloadable GitHub Release for every
+    # push to main. This is what the app's in-app "Check for updates"
+    # feature reads from. debug.keystore is committed to the repo (it's
+    # not a secret -- it only signs local/CI test builds) so every release
+    # shares the same signing certificate and installs as an update over
+    # the previous version instead of requiring an uninstall first.
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}
+        name: "ScanPro v1.0.${{ github.run_number }}"
+        body: "Automated build from commit ${{ github.sha }}"
+        files: app/build/outputs/apk/debug/*.apk

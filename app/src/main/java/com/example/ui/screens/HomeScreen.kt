@@ -33,6 +33,7 @@ import com.example.ui.components.DocCard
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
+import com.example.util.ShareUtil
 import com.example.util.rememberDocumentScannerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +50,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val documents by viewModel.documents.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val launchScannerFlow = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
         viewModel.setScannedPagesFromUris(uris)
@@ -267,7 +269,7 @@ fun HomeScreen(
                         onClick = { onNavigateToViewer(doc) },
                         onDelete = { viewModel.deleteDocument(doc.id) },
                         onRename = { newName -> viewModel.renameDocument(doc.id, newName) },
-                        onShare = { viewModel.showToast("Sharing ${doc.title}...") }
+                        onShare = { ShareUtil.shareDocument(context, doc) }
                     )
                 }
             }

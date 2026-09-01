@@ -25,6 +25,9 @@ import com.example.data.ScanProViewModel
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
+import com.example.util.AppUpdater
+import com.example.util.ShareUtil
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +41,12 @@ fun SettingsScreen(
     val defaultSaveLocation by viewModel.defaultSaveLocation.collectAsState()
     val defaultQuality by viewModel.defaultQuality.collectAsState()
     val language by viewModel.language.collectAsState()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var checkedOnce by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
 
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
@@ -170,7 +179,49 @@ fun SettingsScreen(
                     icon = Icons.Outlined.Share,
                     title = "Share App",
                     subtitle = "Recommend ScanPro to colleagues",
-                    onClick = { viewModel.showToast("Sharing ScanPro...") }
+                    onClick = {
+                        ShareUtil.shareText(
+                            context,
+                            text = "Check out ScanPro — a free document scanner & PDF toolkit: https://github.com/Rony-Mia/ScanPro",
+                            subject = "ScanPro"
+                        )
+                    }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(6.dp))
+                SettingsSectionHeader("APP UPDATE")
+            }
+
+            item {
+                SettingsClickableRow(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = "Check for Updates",
+                    subtitle = when {
+                        isCheckingUpdate -> "Checking..."
+                        updateInfo != null -> "New version ${updateInfo?.versionName} available — tap to download"
+                        checkedOnce -> "You're on the latest version"
+                        else -> "Current version: ${com.example.BuildConfig.VERSION_NAME}"
+                    },
+                    onClick = {
+                        if (updateInfo != null) {
+                            AppUpdater.downloadAndInstall(context, updateInfo!!)
+                            viewModel.showToast("Downloading update...")
+                        } else if (!isCheckingUpdate) {
+                            isCheckingUpdate = true
+                            coroutineScope.launch {
+                                val result = AppUpdater.checkForUpdate()
+                                updateInfo = result
+                                isCheckingUpdate = false
+                                checkedOnce = true
+                                if (result == null) {
+                                    viewModel.showToast("You're on the latest version")
+                                }
+                            }
+                        }
+                    },
+                    testTag = "settings_check_update_row"
                 )
             }
 
