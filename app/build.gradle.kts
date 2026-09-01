@@ -14,8 +14,12 @@ android {
     applicationId = "com.aistudio.scanpro.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    // versionCode/versionName come from CI (-PappVersionCode / -PappVersionName)
+    // so every GitHub Actions build is uniquely numbered and the in-app
+    // updater can detect when a newer build is available. Falls back to a
+    // fixed local dev value when building outside CI.
+    versionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
+    versionName = (project.findProperty("appVersionName") as String?) ?: "1.0-dev"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
