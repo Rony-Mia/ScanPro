@@ -63,4 +63,18 @@ object ShareUtil {
         }
         context.startActivity(Intent.createChooser(intent, "Share text"))
     }
+
+    /**
+     * Shares ScanPro APK direct download link via the standard Android share sheet (Intent.ACTION_SEND).
+     */
+    fun shareApp(context: Context, customApkUrl: String? = null) {
+        val downloadUrl = customApkUrl ?: Constants.LATEST_APK_DOWNLOAD_URL
+        val message = "Check out ScanPro — scan, merge, and manage documents, free and offline!\nDownload: $downloadUrl"
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "ScanPro App")
+            putExtra(Intent.EXTRA_TEXT, message)
+        }
+        context.startActivity(Intent.createChooser(intent, Constants.SHARE_CHOOSER_TITLE))
+    }
 }

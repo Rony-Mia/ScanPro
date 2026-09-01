@@ -186,7 +186,7 @@ fun OcrTextScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.showToast("Exported as ${doc.title.substringBeforeLast(".")}.txt")
+                            viewModel.exportOcrText(doc.copy(ocrText = extractedText), "txt")
                         },
                         enabled = !isProcessing,
                         shape = RoundedCornerShape(10.dp),
@@ -202,7 +202,7 @@ fun OcrTextScreen(
 
                     Button(
                         onClick = {
-                            viewModel.showToast("Exported as ${doc.title.substringBeforeLast(".")}.docx")
+                            viewModel.exportOcrText(doc.copy(ocrText = extractedText), "docx")
                         },
                         enabled = !isProcessing,
                         colors = ButtonDefaults.buttonColors(

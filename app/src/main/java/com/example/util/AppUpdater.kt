@@ -30,8 +30,42 @@ import java.net.URL
  */
 object AppUpdater {
 
-    private const val REPO = "Rony-Mia/ScanPro"
-    private const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPO/releases/latest"
+    private const val REPO = Constants.GITHUB_REPO
+    private const val LATEST_RELEASE_API = Constants.GITHUB_LATEST_API
+
+    /**
+     * Dynamically queries the latest GitHub release to find the real APK download URL,
+     * falling back to the standard latest download URL constant.
+     */
+    suspend fun getLatestReleaseApkDownloadUrl(): String = withContext(Dispatchers.IO) {
+        try {
+            val connection = URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 5_000
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(body)
+                val assets = json.optJSONArray("assets")
+                if (assets != null) {
+                    for (i in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(i)
+                        val name = asset.optString("name", "")
+                        if (name.endsWith(".apk")) {
+                            val url = asset.optString("browser_download_url", "")
+                            if (url.isNotBlank()) return@withContext url
+                        }
+                    }
+                }
+            }
+            connection.disconnect()
+        } catch (_: Exception) {
+            // Network failure / rate limit / offline - fall back to reliable constant
+        }
+        Constants.LATEST_APK_DOWNLOAD_URL
+    }
 
     data class UpdateInfo(
         val versionCode: Int,

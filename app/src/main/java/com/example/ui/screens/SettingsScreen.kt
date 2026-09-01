@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,6 +29,7 @@ import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.util.AppUpdater
+import com.example.util.Constants
 import com.example.util.ShareUtil
 import kotlinx.coroutines.launch
 
@@ -49,6 +53,15 @@ fun SettingsScreen(
     var updateInfo by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
 
     var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showSaveLocationDialog by remember { mutableStateOf(false) }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.setCustomSaveLocation(uri)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -108,9 +121,10 @@ fun SettingsScreen(
             item {
                 SettingsValueRow(
                     icon = Icons.Outlined.Folder,
-                    title = "Default Save Location",
+                    title = "Save Location",
                     value = defaultSaveLocation,
-                    onClick = { viewModel.showToast("Default folder: $defaultSaveLocation") }
+                    onClick = { showSaveLocationDialog = true },
+                    testTag = "settings_save_location_row"
                 )
             }
 
@@ -178,14 +192,14 @@ fun SettingsScreen(
                 SettingsClickableRow(
                     icon = Icons.Outlined.Share,
                     title = "Share App",
-                    subtitle = "Recommend ScanPro to colleagues",
+                    subtitle = "Share ScanPro APK download link with others",
                     onClick = {
-                        ShareUtil.shareText(
-                            context,
-                            text = "Check out ScanPro — a free document scanner & PDF toolkit: https://github.com/Rony-Mia/ScanPro",
-                            subject = "ScanPro"
-                        )
-                    }
+                        coroutineScope.launch {
+                            val apkUrl = AppUpdater.getLatestReleaseApkDownloadUrl()
+                            ShareUtil.shareApp(context, apkUrl)
+                        }
+                    },
+                    testTag = "settings_share_app_row"
                 )
             }
 
@@ -254,7 +268,7 @@ fun SettingsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "ScanPro v2.4.1 (Build 890)",
+                        text = "ScanPro v${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -268,6 +282,140 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showSaveLocationDialog) {
+        val isDefault = viewModel.isDefaultSaveLocation()
+        AlertDialog(
+            onDismissRequest = { showSaveLocationDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.FolderSpecial,
+                        contentDescription = null,
+                        tint = ScanProGreenContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Choose Save Location", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Select where newly scanned and exported PDFs, images, and documents will be saved:",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Option 1: App Folder (Default)
+                    Surface(
+                        onClick = {
+                            viewModel.setDefaultSaveLocation()
+                            showSaveLocationDialog = false
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isDefault) ScanProGreenContainer.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (isDefault) 1.5.dp else 1.dp,
+                            color = if (isDefault) ScanProGreenContainer else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("save_location_default_option")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isDefault,
+                                onClick = {
+                                    viewModel.setDefaultSaveLocation()
+                                    showSaveLocationDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = ScanProGreenContainer
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "App folder (default)",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = Constants.DEFAULT_SAVE_LOCATION_NAME,
+                                    fontSize = 12.sp,
+                                    color = if (isDefault) ScanProGreenContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Option 2: Custom Folder via SAF
+                    Surface(
+                        onClick = {
+                            showSaveLocationDialog = false
+                            try {
+                                folderPickerLauncher.launch(null)
+                            } catch (_: Exception) {
+                                viewModel.showToast("Could not open system folder picker")
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (!isDefault) ScanProGreenContainer.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (!isDefault) 1.5.dp else 1.dp,
+                            color = if (!isDefault) ScanProGreenContainer else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("save_location_custom_option")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = !isDefault,
+                                onClick = {
+                                    showSaveLocationDialog = false
+                                    try {
+                                        folderPickerLauncher.launch(null)
+                                    } catch (_: Exception) {
+                                        viewModel.showToast("Could not open system folder picker")
+                                    }
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = ScanProGreenContainer
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Choose custom folder",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = if (!isDefault) defaultSaveLocation else "Pick any directory on device / SD card",
+                                    fontSize = 12.sp,
+                                    color = if (!isDefault) ScanProGreenContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSaveLocationDialog = false }) {
+                    Text("Close", fontWeight = FontWeight.SemiBold, color = ScanProGreenContainer)
+                }
+            }
+        )
     }
 
     if (showPrivacyDialog) {
@@ -370,7 +518,8 @@ private fun SettingsValueRow(
     icon: ImageVector,
     title: String,
     value: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    testTag: String = ""
 ) {
     Surface(
         onClick = onClick,
@@ -380,7 +529,9 @@ private fun SettingsValueRow(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
         ),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (testTag.isNotBlank()) Modifier.testTag(testTag) else Modifier)
     ) {
         Row(
             modifier = Modifier
@@ -389,7 +540,7 @@ private fun SettingsValueRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false)) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
@@ -399,8 +550,15 @@ private fun SettingsValueRow(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(value, fontSize = 13.sp, color = ScanProGreenContainer, fontWeight = FontWeight.Medium)
+                Text(
+                    text = value,
+                    fontSize = 13.sp,
+                    color = ScanProGreenContainer,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
+                )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,

@@ -6,6 +6,8 @@ import androidx.annotation.DrawableRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.*
+import com.example.util.Constants
+import com.example.util.StorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,13 +24,13 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     private val pdfEngine = PdfEngine(application)
     private val ocrEngine = OcrEngine(application)
     private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
-    private val prefs = application.getSharedPreferences("scanpro_prefs", android.content.Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences(Constants.PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
-    private val _isOnboardingCompleted = MutableStateFlow(prefs.getBoolean("is_onboarding_completed", false))
+    private val _isOnboardingCompleted = MutableStateFlow(prefs.getBoolean(Constants.PREF_KEY_ONBOARDING_COMPLETED, false))
     val isOnboardingCompleted: StateFlow<Boolean> = _isOnboardingCompleted.asStateFlow()
 
     fun completeOnboarding() {
-        prefs.edit().putBoolean("is_onboarding_completed", true).apply()
+        prefs.edit().putBoolean(Constants.PREF_KEY_ONBOARDING_COMPLETED, true).apply()
         _isOnboardingCompleted.value = true
     }
 
@@ -95,8 +97,24 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     private val _autoCapture = MutableStateFlow(true)
     val autoCapture: StateFlow<Boolean> = _autoCapture.asStateFlow()
 
-    private val _defaultSaveLocation = MutableStateFlow("/Documents/Scans")
+    private val _defaultSaveLocation = MutableStateFlow(StorageHelper.getCurrentSaveLocationDisplay(application))
     val defaultSaveLocation: StateFlow<String> = _defaultSaveLocation.asStateFlow()
+
+    fun setDefaultSaveLocation() {
+        StorageHelper.setDefaultSaveLocation(getApplication())
+        _defaultSaveLocation.value = Constants.DEFAULT_SAVE_LOCATION_NAME
+        showToast("Save location set to ${Constants.DEFAULT_SAVE_LOCATION_NAME}")
+    }
+
+    fun setCustomSaveLocation(uri: Uri) {
+        val folderName = StorageHelper.setCustomSaveLocation(getApplication(), uri)
+        _defaultSaveLocation.value = folderName
+        showToast("Save location set to $folderName")
+    }
+
+    fun isDefaultSaveLocation(): Boolean {
+        return StorageHelper.isDefaultLocation(getApplication())
+    }
 
     private val _defaultQuality = MutableStateFlow("High (300 dpi)")
     val defaultQuality: StateFlow<String> = _defaultQuality.asStateFlow()
@@ -411,6 +429,11 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
 
                 val generatedFile = pdfEngine.createPdfFromPages(pages, outputFile)
                 val realSize = PdfEngine.formatFileSize(generatedFile.length())
+                
+                // Export to user-chosen public storage (Documents/ScanPro or SAF custom folder)
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$title"
+
                 val newDoc = DocumentItem(
                     id = docId,
                     title = title,
@@ -429,7 +452,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(newDoc) + it }
                 _selectedDocument.value = newDoc
                 withContext(Dispatchers.Main) {
-                    showToast("Document saved to Library ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(newDoc)
                 }
             } catch (e: Exception) {
@@ -481,6 +504,10 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                     if (outputTitle.endsWith(".pdf", ignoreCase = true)) outputTitle else "$outputTitle.pdf"
                 } else "Merged_${System.currentTimeMillis() % 10000}.pdf"
 
+                // Export to user storage
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), mergedFile, safeTitle)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$safeTitle"
+
                 val newDoc = DocumentItem(
                     id = docId,
                     title = safeTitle,
@@ -498,7 +525,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(newDoc) + it }
                 _selectedDocument.value = newDoc
                 withContext(Dispatchers.Main) {
-                    showToast("Merged into $safeTitle ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(newDoc)
                 }
             } catch (e: Exception) {
@@ -524,9 +551,11 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 val outputDir = File(documentsDir, "split_${System.currentTimeMillis()}").apply { mkdirs() }
 
                 val splitFiles = pdfEngine.splitPdf(Uri.fromFile(sourceFile), splitCuts, outputDir)
+                val locationName = StorageHelper.getCurrentSaveLocationDisplay(getApplication())
                 val result = splitFiles.mapIndexed { index, file ->
                     val partNum = index + 1
                     val realSize = PdfEngine.formatFileSize(file.length())
+                    StorageHelper.saveFileToUserStorage(getApplication(), file, file.name)
                     DocumentItem(
                         id = "doc-${System.currentTimeMillis()}-$partNum",
                         title = file.name,
@@ -544,7 +573,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _documents.update { result + it }
                 withContext(Dispatchers.Main) {
-                    showToast("Split into ${result.size} files successfully")
+                    showToast("Saved ${result.size} split files to $locationName")
                     onComplete?.invoke(result)
                 }
             } catch (e: Exception) {
@@ -568,13 +597,18 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_compressed.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_compressed.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val compressedFile = pdfEngine.compressPdf(Uri.fromFile(sourceFile), level, outputFile)
                 val realSize = PdfEngine.formatFileSize(compressedFile.length())
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), compressedFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val compressed = doc.copy(
                     id = docId,
-                    title = outputFile.name,
+                    title = targetFileName,
                     fileSize = realSize,
                     isCompressed = true,
                     filePath = compressedFile.absolutePath
@@ -582,7 +616,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(compressed) + it }
                 _selectedDocument.value = compressed
                 withContext(Dispatchers.Main) {
-                    showToast("Compressed to $realSize (${level.reductionPercent})")
+                    showToast("Saved to $destinationDisplay ($realSize, ${level.reductionPercent})")
                     onComplete?.invoke(compressed)
                 }
             } catch (e: Exception) {
@@ -606,12 +640,18 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_protected.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_protected.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val protectedFile = pdfEngine.setPassword(Uri.fromFile(sourceFile), pass, outputFile)
                 val realSize = PdfEngine.formatFileSize(protectedFile.length())
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), protectedFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val protected = doc.copy(
                     id = docId,
+                    title = targetFileName,
                     isProtected = true,
                     password = pass,
                     fileSize = realSize,
@@ -622,7 +662,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _selectedDocument.value = protected
                 withContext(Dispatchers.Main) {
-                    showToast("Password protection applied ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(protected)
                 }
             } catch (e: Exception) {
@@ -648,13 +688,18 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_watermarked.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_watermarked.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val watermarkedFile = pdfEngine.addWatermark(Uri.fromFile(sourceFile), watermarkText, pos, opacity, outputFile)
                 val realSize = PdfEngine.formatFileSize(watermarkedFile.length())
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), watermarkedFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val watermarked = doc.copy(
                     id = docId,
-                    title = outputFile.name,
+                    title = targetFileName,
                     watermark = watermarkText,
                     fileSize = realSize,
                     filePath = watermarkedFile.absolutePath
@@ -662,7 +707,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(watermarked) + it }
                 _selectedDocument.value = watermarked
                 withContext(Dispatchers.Main) {
-                    showToast("Watermark '$watermarkText' applied ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(watermarked)
                 }
             } catch (e: Exception) {
@@ -713,6 +758,9 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 val thumbFile = File(documentsDir, "${docId}_thumb.jpg")
                 val thumbnailUri = pdfEngine.generateThumbnailForPdf(generatedFile, thumbFile)?.toString()
 
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$title"
+
                 val newDoc = DocumentItem(
                     id = docId,
                     title = title,
@@ -728,7 +776,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(newDoc) + it }
                 _selectedDocument.value = newDoc
                 withContext(Dispatchers.Main) {
-                    showToast("${uris.size} ${if (uris.size == 1) "image" else "images"} converted to PDF ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(newDoc)
                 }
             } catch (e: Exception) {
@@ -750,12 +798,15 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 val sourceFile = ensurePdfFileInternal(doc)
                 val outputDir = File(documentsDir, "pdf_to_img_${System.currentTimeMillis()}").apply { mkdirs() }
                 val imageFiles = pdfEngine.pdfToImages(sourceFile, outputDir)
+                val locationName = StorageHelper.getCurrentSaveLocationDisplay(getApplication())
 
                 val baseName = doc.title.substringBeforeLast(".")
                 val results = imageFiles.mapIndexed { index, file ->
+                    val fileName = "${baseName}_page${index + 1}.jpg"
+                    StorageHelper.saveFileToUserStorage(getApplication(), file, fileName, "image/jpeg")
                     DocumentItem(
                         id = "doc-${System.currentTimeMillis()}-$index",
-                        title = "${baseName}_page${index + 1}.jpg",
+                        title = fileName,
                         date = "Today",
                         time = "Just now",
                         pageCount = 1,
@@ -768,7 +819,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _documents.update { results + it }
                 withContext(Dispatchers.Main) {
-                    showToast("Converted to ${results.size} ${if (results.size == 1) "image" else "images"}")
+                    showToast("Saved ${results.size} images to $locationName")
                     onComplete?.invoke(results)
                 }
             } catch (e: Exception) {
@@ -793,20 +844,25 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_rotated.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_rotated.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val rotatedFile = pdfEngine.rotatePages(Uri.fromFile(sourceFile), rotations, outputFile)
                 val realSize = PdfEngine.formatFileSize(rotatedFile.length())
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), rotatedFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val rotated = doc.copy(
                     id = docId,
-                    title = outputFile.name,
+                    title = targetFileName,
                     fileSize = realSize,
                     filePath = rotatedFile.absolutePath
                 )
                 _documents.update { listOf(rotated) + it }
                 _selectedDocument.value = rotated
                 withContext(Dispatchers.Main) {
-                    showToast("Pages rotated ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(rotated)
                 }
             } catch (e: Exception) {
@@ -835,14 +891,19 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_edited.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_edited.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val resultFile = pdfEngine.deletePages(Uri.fromFile(sourceFile), pageIndices, outputFile)
                 val realSize = PdfEngine.formatFileSize(resultFile.length())
                 val newPageCount = (doc.pageCount - pageIndices.size).coerceAtLeast(1)
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), resultFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val edited = doc.copy(
                     id = docId,
-                    title = outputFile.name,
+                    title = targetFileName,
                     fileSize = realSize,
                     pageCount = newPageCount,
                     filePath = resultFile.absolutePath
@@ -850,7 +911,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _documents.update { listOf(edited) + it }
                 _selectedDocument.value = edited
                 withContext(Dispatchers.Main) {
-                    showToast("${pageIndices.size} ${if (pageIndices.size == 1) "page" else "pages"} deleted ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(edited)
                 }
             } catch (e: Exception) {
@@ -882,22 +943,27 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
                 val docId = "doc-${System.currentTimeMillis()}"
-                val outputFile = File(documentsDir, "${doc.title.substringBeforeLast(".")}_signed.pdf")
+                val targetFileName = "${doc.title.substringBeforeLast(".")}_signed.pdf"
+                val outputFile = File(documentsDir, targetFileName)
 
                 val signedFile = pdfEngine.addSignature(
                     Uri.fromFile(sourceFile), pageIndex, strokes, padWidth, padHeight, outputFile
                 )
                 val realSize = PdfEngine.formatFileSize(signedFile.length())
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), signedFile, targetFileName)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
                 val signed = doc.copy(
                     id = docId,
-                    title = outputFile.name,
+                    title = targetFileName,
                     fileSize = realSize,
                     filePath = signedFile.absolutePath
                 )
                 _documents.update { listOf(signed) + it }
                 _selectedDocument.value = signed
                 withContext(Dispatchers.Main) {
-                    showToast("Document signed ($realSize)")
+                    showToast("Saved to $destinationDisplay ($realSize)")
                     onComplete?.invoke(signed)
                 }
             } catch (e: Exception) {
@@ -906,6 +972,22 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 }
             } finally {
                 _isProcessing.value = false
+            }
+        }
+    }
+
+    /** Real OCR export to user storage (.txt or .docx). */
+    fun exportOcrText(doc: DocumentItem, format: String) {
+        val baseName = doc.title.substringBeforeLast(".")
+        val text = doc.ocrText.ifBlank { "No text extracted from document." }
+        val targetFileName = "$baseName.$format"
+        val mimeType = if (format == "docx") "application/vnd.openxmlformats-officedocument.wordprocessingml.document" else "text/plain"
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val saveResult = StorageHelper.saveTextToUserStorage(getApplication(), text, targetFileName, mimeType)
+            val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+            withContext(Dispatchers.Main) {
+                showToast("Saved to $destinationDisplay")
             }
         }
     }
