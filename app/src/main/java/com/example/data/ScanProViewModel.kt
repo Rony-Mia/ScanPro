@@ -91,12 +91,17 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     private val _isGridView = MutableStateFlow(false)
     val isGridView: StateFlow<Boolean> = _isGridView.asStateFlow()
 
+    private val _sortOrder = MutableStateFlow(DocSortOrder.DATE_DESC)
+    val sortOrder: StateFlow<DocSortOrder> = _sortOrder.asStateFlow()
+
+    fun setSortOrder(order: DocSortOrder) {
+        _sortOrder.value = order
+        showToast("Sorted by ${order.displayName}")
+    }
+
     // Settings
     private val _darkMode = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
-
-    private val _autoCapture = MutableStateFlow(true)
-    val autoCapture: StateFlow<Boolean> = _autoCapture.asStateFlow()
 
     private val _defaultSaveLocation = MutableStateFlow(StorageHelper.getCurrentSaveLocationDisplay(application))
     val defaultSaveLocation: StateFlow<String> = _defaultSaveLocation.asStateFlow()
@@ -117,11 +122,28 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         return StorageHelper.isDefaultLocation(getApplication())
     }
 
-    private val _defaultQuality = MutableStateFlow("High (300 dpi)")
+    private val _defaultQuality = MutableStateFlow(prefs.getString("pref_image_quality", "High (300 dpi)") ?: "High (300 dpi)")
     val defaultQuality: StateFlow<String> = _defaultQuality.asStateFlow()
 
-    private val _language = MutableStateFlow("English (US)")
+    fun setDefaultQuality(quality: String) {
+        _defaultQuality.value = quality
+        prefs.edit().putString("pref_image_quality", quality).apply()
+        showToast("Quality set to $quality")
+    }
+
+    private val _language = MutableStateFlow(prefs.getString("pref_app_language", "English (US)") ?: "English (US)")
     val language: StateFlow<String> = _language.asStateFlow()
+
+    fun setLanguage(langName: String, localeTag: String) {
+        _language.value = langName
+        prefs.edit().putString("pref_app_language", langName).apply()
+        try {
+            androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
+                androidx.core.os.LocaleListCompat.forLanguageTags(localeTag)
+            )
+        } catch (_: Exception) {}
+        showToast("Language set to $langName")
+    }
 
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
@@ -150,10 +172,6 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleDarkMode(enabled: Boolean) {
         _darkMode.value = enabled
-    }
-
-    fun toggleAutoCapture(enabled: Boolean) {
-        _autoCapture.value = enabled
     }
 
     fun selectDocument(doc: DocumentItem) {
@@ -288,6 +306,41 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             pages[index] = p.copy(filter = nextFilter)
             _activeDraftPages.value = pages
             showToast("Filter: ${nextFilter.displayName}")
+        }
+    }
+
+    fun updateActivePageCrop(cropLeft: Float, cropTop: Float, cropRight: Float, cropBottom: Float) {
+        val index = _selectedDraftIndex.value
+        val pages = _activeDraftPages.value.toMutableList()
+        if (index in pages.indices) {
+            val p = pages[index]
+            val safeLeft = cropLeft.coerceIn(0f, 0.85f)
+            val safeTop = cropTop.coerceIn(0f, 0.85f)
+            val safeRight = cropRight.coerceIn(safeLeft + 0.1f, 1f)
+            val safeBottom = cropBottom.coerceIn(safeTop + 0.1f, 1f)
+            pages[index] = p.copy(
+                cropLeft = safeLeft,
+                cropTop = safeTop,
+                cropRight = safeRight,
+                cropBottom = safeBottom
+            )
+            _activeDraftPages.value = pages
+        }
+    }
+
+    fun resetActivePageCrop() {
+        val index = _selectedDraftIndex.value
+        val pages = _activeDraftPages.value.toMutableList()
+        if (index in pages.indices) {
+            val p = pages[index]
+            pages[index] = p.copy(
+                cropLeft = 0f,
+                cropTop = 0f,
+                cropRight = 1f,
+                cropBottom = 1f
+            )
+            _activeDraftPages.value = pages
+            showToast("Crop reset")
         }
     }
 
@@ -428,7 +481,13 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 val title = "Scan_${System.currentTimeMillis() % 10000}.pdf"
                 val outputFile = File(documentsDir, "$docId.pdf")
 
-                val generatedFile = pdfEngine.createPdfFromPages(pages, outputFile)
+                val (qualityVal, maxDim) = when {
+                    _defaultQuality.value.contains("Low", true) -> Pair(0.70f, 1200)
+                    _defaultQuality.value.contains("Medium", true) -> Pair(0.85f, 1800)
+                    else -> Pair(0.95f, 2400)
+                }
+
+                val generatedFile = pdfEngine.createPdfFromPages(pages, outputFile, qualityVal, maxDim)
                 val realSize = PdfEngine.formatFileSize(generatedFile.length())
                 
                 // Export to user-chosen public storage (Documents/ScanPro or SAF custom folder)
@@ -462,6 +521,21 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 }
             } finally {
                 _isProcessing.value = false
+            }
+        }
+    }
+
+    fun printDocument(context: android.content.Context, doc: DocumentItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = ensurePdfFileInternal(doc)
+                withContext(Dispatchers.Main) {
+                    com.example.util.PrintUtil.printPdfFile(context, doc, file)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Print error: ${e.localizedMessage ?: "Unknown error"}")
+                }
             }
         }
     }

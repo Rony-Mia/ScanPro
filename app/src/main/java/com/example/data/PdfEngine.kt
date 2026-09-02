@@ -360,10 +360,18 @@ class PdfEngine(private val context: Context) {
         try {
             val accessPermission = AccessPermission()
             val protectionPolicy = StandardProtectionPolicy(password, password, accessPermission).apply {
-                encryptionKeyLength = 128
+                encryptionKeyLength = 256
                 permissions = accessPermission
             }
-            doc.protect(protectionPolicy)
+            try {
+                doc.protect(protectionPolicy)
+            } catch (_: Exception) {
+                val fallbackPolicy = StandardProtectionPolicy(password, password, accessPermission).apply {
+                    encryptionKeyLength = 128
+                    permissions = accessPermission
+                }
+                doc.protect(fallbackPolicy)
+            }
             doc.save(outputFile)
         } finally {
             doc.close()
@@ -537,24 +545,33 @@ class PdfEngine(private val context: Context) {
     /**
      * Generates a PDF file from scanned pages (either image URIs or resource drawables).
      */
-    suspend fun createPdfFromPages(pages: List<ScannedPage>, outputFile: File): File = withContext(Dispatchers.IO) {
+    suspend fun createPdfFromPages(
+        pages: List<ScannedPage>,
+        outputFile: File,
+        jpegQuality: Float = 0.90f,
+        maxDimension: Int = 2400
+    ): File = withContext(Dispatchers.IO) {
         outputFile.parentFile?.mkdirs()
         val doc = PDDocument()
 
         try {
             for (page in pages) {
-                val bitmap = loadPageBitmap(page) ?: continue
+                val rawBitmap = loadPageBitmap(page) ?: continue
+                val bitmap = scaleBitmapDown(rawBitmap, maxDimension)
                 try {
                     val pageRect = PDRectangle(bitmap.width.toFloat(), bitmap.height.toFloat())
                     val pdPage = PDPage(pageRect)
                     doc.addPage(pdPage)
 
-                    val pdImage = JPEGFactory.createFromImage(doc, bitmap, 0.90f)
+                    val pdImage = JPEGFactory.createFromImage(doc, bitmap, jpegQuality)
                     val contentStream = PDPageContentStream(doc, pdPage)
                     contentStream.drawImage(pdImage, 0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
                     contentStream.close()
                 } finally {
-                    bitmap.recycle()
+                    if (bitmap !== rawBitmap) {
+                        bitmap.recycle()
+                    }
+                    rawBitmap.recycle()
                 }
             }
             doc.save(outputFile)
@@ -565,7 +582,7 @@ class PdfEngine(private val context: Context) {
     }
 
     /**
-     * Loads a Bitmap from a ScannedPage applying any rotation or filters.
+     * Loads a Bitmap from a ScannedPage applying any rotation, crop, and filters.
      */
     fun loadPageBitmap(page: ScannedPage): Bitmap? {
         val baseBitmap: Bitmap? = if (!page.imageUri.isNullOrEmpty()) {
@@ -581,15 +598,80 @@ class PdfEngine(private val context: Context) {
 
         if (baseBitmap == null) return null
 
+        var currentBitmap = baseBitmap
+
         if (page.rotationAngle != 0f) {
             val matrix = AndroidMatrix().apply { postRotate(page.rotationAngle) }
-            val rotated = Bitmap.createBitmap(baseBitmap, 0, 0, baseBitmap.width, baseBitmap.height, matrix, true)
-            if (rotated != baseBitmap) {
-                baseBitmap.recycle()
+            val rotated = Bitmap.createBitmap(currentBitmap, 0, 0, currentBitmap.width, currentBitmap.height, matrix, true)
+            if (rotated != currentBitmap) {
+                if (currentBitmap != baseBitmap) currentBitmap.recycle()
+                currentBitmap = rotated
             }
-            return rotated
         }
-        return baseBitmap
+
+        // Apply Crop if boundaries are set
+        if (page.cropLeft > 0.005f || page.cropTop > 0.005f || page.cropRight < 0.995f || page.cropBottom < 0.995f) {
+            val width = currentBitmap.width
+            val height = currentBitmap.height
+            val cl = (page.cropLeft.coerceIn(0f, 0.9f) * width).toInt().coerceIn(0, width - 2)
+            val ct = (page.cropTop.coerceIn(0f, 0.9f) * height).toInt().coerceIn(0, height - 2)
+            val cr = (page.cropRight.coerceIn(page.cropLeft + 0.05f, 1f) * width).toInt().coerceIn(cl + 2, width)
+            val cb = (page.cropBottom.coerceIn(page.cropTop + 0.05f, 1f) * height).toInt().coerceIn(ct + 2, height)
+            val cropW = cr - cl
+            val cropH = cb - ct
+            if (cropW > 0 && cropH > 0 && (cropW < width || cropH < height)) {
+                val cropped = Bitmap.createBitmap(currentBitmap, cl, ct, cropW, cropH)
+                if (cropped != currentBitmap) {
+                    if (currentBitmap != baseBitmap) currentBitmap.recycle()
+                    currentBitmap = cropped
+                }
+            }
+        }
+
+        // Apply Filter if not ORIGINAL
+        if (page.filter != com.example.model.PageFilter.ORIGINAL) {
+            val filtered = applyFilterToBitmap(currentBitmap, page.filter)
+            if (filtered != currentBitmap) {
+                if (currentBitmap != baseBitmap) currentBitmap.recycle()
+                currentBitmap = filtered
+            }
+        }
+
+        return currentBitmap
+    }
+
+    private fun applyFilterToBitmap(bitmap: Bitmap, filter: com.example.model.PageFilter): Bitmap {
+        val result = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        val paint = android.graphics.Paint()
+        val cm = android.graphics.ColorMatrix()
+        when (filter) {
+            com.example.model.PageFilter.GRAYSCALE -> {
+                cm.setSaturation(0f)
+            }
+            com.example.model.PageFilter.BW -> {
+                cm.setSaturation(0f)
+                val contrast = 1.6f
+                val translate = (-0.3f * 255f) * contrast
+                val array = floatArrayOf(
+                    contrast, 0f, 0f, 0f, translate,
+                    0f, contrast, 0f, 0f, translate,
+                    0f, 0f, contrast, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f
+                )
+                cm.postConcat(android.graphics.ColorMatrix(array))
+            }
+            com.example.model.PageFilter.MAGIC -> {
+                cm.setSaturation(1.35f)
+            }
+            com.example.model.PageFilter.COLOR -> {
+                cm.setSaturation(1.15f)
+            }
+            com.example.model.PageFilter.ORIGINAL -> return bitmap
+        }
+        paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return result
     }
 
     /**

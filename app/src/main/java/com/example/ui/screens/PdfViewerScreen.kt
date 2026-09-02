@@ -213,7 +213,7 @@ fun PdfViewerScreen(
                     ViewerActionButton(
                         icon = Icons.Outlined.Print,
                         label = "Print",
-                        onClick = { viewModel.showToast("Preparing document for printing...") },
+                        onClick = { viewModel.printDocument(context, document) },
                         testTag = "viewer_print_button"
                     )
                 }

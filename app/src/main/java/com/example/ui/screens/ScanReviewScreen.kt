@@ -229,7 +229,7 @@ fun ScanReviewScreen(
 
             ScanLineDivider(opacity = 0.35f)
 
-            // Central Preview Area with Crop Handles
+            // Central Preview Area with Interactive Crop Overlay
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -239,7 +239,7 @@ fun ScanReviewScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (activePage != null) {
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxHeight(0.92f)
                             .aspectRatio(0.72f)
@@ -247,6 +247,9 @@ fun ScanReviewScreen(
                             .background(Color.White)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
                     ) {
+                        val containerWidthPx = constraints.maxWidth.toFloat()
+                        val containerHeightPx = constraints.maxHeight.toFloat()
+
                         AsyncImage(
                             model = activePage.imageUri ?: activePage.drawableRes,
                             contentDescription = "Active Document Preview",
@@ -259,19 +262,102 @@ fun ScanReviewScreen(
                             } else null
                         )
 
-                        // Crop Overlay with Corner Handles
+                        // Interactive Crop Overlay with Draggable Corner Handles
                         if (isCropModeActive) {
+                            val leftPx = (activePage.cropLeft * containerWidthPx).coerceIn(0f, containerWidthPx)
+                            val topPx = (activePage.cropTop * containerHeightPx).coerceIn(0f, containerHeightPx)
+                            val rightPx = (activePage.cropRight * containerWidthPx).coerceIn(leftPx + 20f, containerWidthPx)
+                            val bottomPx = (activePage.cropBottom * containerHeightPx).coerceIn(topPx + 20f, containerHeightPx)
+
+                            val cropWidthDp = (maxWidth * (activePage.cropRight - activePage.cropLeft)).coerceAtLeast(24.dp)
+                            val cropHeightDp = (maxHeight * (activePage.cropBottom - activePage.cropTop)).coerceAtLeast(24.dp)
+                            val cropOffsetXDp = (maxWidth * activePage.cropLeft)
+                            val cropOffsetYDp = (maxHeight * activePage.cropTop)
+
+                            // Semi-transparent dimmed outer area
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .border(2.dp, ScanProGreenContainer.copy(alpha = 0.85f))
-                            ) {
-                                // 4 Corner Handles
-                                CropHandle(modifier = Modifier.align(Alignment.TopStart).offset(x = (-8).dp, y = (-8).dp))
-                                CropHandle(modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-8).dp))
-                                CropHandle(modifier = Modifier.align(Alignment.BottomStart).offset(x = (-8).dp, y = 8.dp))
-                                CropHandle(modifier = Modifier.align(Alignment.BottomEnd).offset(x = 8.dp, y = 8.dp))
-                            }
+                                    .offset(x = cropOffsetXDp, y = cropOffsetYDp)
+                                    .size(width = cropWidthDp, height = cropHeightDp)
+                                    .border(2.dp, ScanProGreenContainer, RoundedCornerShape(2.dp))
+                                    .background(ScanProGreenContainer.copy(alpha = 0.08f))
+                            )
+
+                            // Top-Left Corner Handle
+                            CropHandle(
+                                modifier = Modifier
+                                    .offset(
+                                        x = cropOffsetXDp - 12.dp,
+                                        y = cropOffsetYDp - 12.dp
+                                    )
+                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val dLeft = dragAmount.x / containerWidthPx
+                                            val dTop = dragAmount.y / containerHeightPx
+                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.1f)
+                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.1f)
+                                            viewModel.updateActivePageCrop(newLeft, newTop, activePage.cropRight, activePage.cropBottom)
+                                        }
+                                    }
+                            )
+
+                            // Top-Right Corner Handle
+                            CropHandle(
+                                modifier = Modifier
+                                    .offset(
+                                        x = cropOffsetXDp + cropWidthDp - 12.dp,
+                                        y = cropOffsetYDp - 12.dp
+                                    )
+                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val dRight = dragAmount.x / containerWidthPx
+                                            val dTop = dragAmount.y / containerHeightPx
+                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.1f, 1f)
+                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.1f)
+                                            viewModel.updateActivePageCrop(activePage.cropLeft, newTop, newRight, activePage.cropBottom)
+                                        }
+                                    }
+                            )
+
+                            // Bottom-Left Corner Handle
+                            CropHandle(
+                                modifier = Modifier
+                                    .offset(
+                                        x = cropOffsetXDp - 12.dp,
+                                        y = cropOffsetYDp + cropHeightDp - 12.dp
+                                    )
+                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val dLeft = dragAmount.x / containerWidthPx
+                                            val dBottom = dragAmount.y / containerHeightPx
+                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.1f)
+                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.1f, 1f)
+                                            viewModel.updateActivePageCrop(newLeft, activePage.cropTop, activePage.cropRight, newBottom)
+                                        }
+                                    }
+                            )
+
+                            // Bottom-Right Corner Handle
+                            CropHandle(
+                                modifier = Modifier
+                                    .offset(
+                                        x = cropOffsetXDp + cropWidthDp - 12.dp,
+                                        y = cropOffsetYDp + cropHeightDp - 12.dp
+                                    )
+                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val dRight = dragAmount.x / containerWidthPx
+                                            val dBottom = dragAmount.y / containerHeightPx
+                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.1f, 1f)
+                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.1f, 1f)
+                                            viewModel.updateActivePageCrop(activePage.cropLeft, activePage.cropTop, newRight, newBottom)
+                                        }
+                                    }
+                            )
                         }
                     }
                 }
@@ -294,14 +380,22 @@ fun ScanReviewScreen(
                 ) {
                     ReviewToolbarButton(
                         icon = Icons.Default.Crop,
-                        label = "Crop",
+                        label = if (isCropModeActive) "Done" else "Crop",
                         isActive = isCropModeActive,
                         onClick = {
                             isCropModeActive = !isCropModeActive
-                            viewModel.showToast(if (isCropModeActive) "Crop handles enabled" else "Crop applied")
+                            viewModel.showToast(if (isCropModeActive) "Drag corners to crop" else "Crop saved")
                         },
                         testTag = "review_crop_button"
                     )
+                    if (isCropModeActive) {
+                        ReviewToolbarButton(
+                            icon = Icons.Default.Close,
+                            label = "Reset Crop",
+                            onClick = { viewModel.resetActivePageCrop() },
+                            testTag = "review_reset_crop_button"
+                        )
+                    }
                     ReviewToolbarButton(
                         icon = Icons.Default.RotateRight,
                         label = "Rotate",

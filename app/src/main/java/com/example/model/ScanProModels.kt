@@ -17,10 +17,10 @@ data class ScannedPage(
     val imageUri: String? = null,
     val rotationAngle: Float = 0f,
     val filter: PageFilter = PageFilter.ORIGINAL,
-    val cropTop: Float = 0.05f,
-    val cropBottom: Float = 0.95f,
-    val cropLeft: Float = 0.05f,
-    val cropRight: Float = 0.95f
+    val cropTop: Float = 0f,
+    val cropBottom: Float = 1f,
+    val cropLeft: Float = 0f,
+    val cropRight: Float = 1f
 )
 
 enum class PageFilter(val displayName: String) {
@@ -87,4 +87,13 @@ enum class ToolType(
 
 enum class ToolCategory {
     SCANNING, EDITING, SECURITY
+}
+
+enum class DocSortOrder(val displayName: String) {
+    DATE_DESC("Newest First"),
+    DATE_ASC("Oldest First"),
+    NAME_ASC("Name (A to Z)"),
+    NAME_DESC("Name (Z to A)"),
+    SIZE_DESC("Largest First"),
+    SIZE_ASC("Smallest First")
 }

@@ -41,7 +41,6 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val darkMode by viewModel.darkMode.collectAsState()
-    val autoCapture by viewModel.autoCapture.collectAsState()
     val defaultSaveLocation by viewModel.defaultSaveLocation.collectAsState()
     val defaultQuality by viewModel.defaultQuality.collectAsState()
     val language by viewModel.language.collectAsState()
@@ -54,6 +53,8 @@ fun SettingsScreen(
 
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showSaveLocationDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var showQualityDialog by remember { mutableStateOf(false) }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -133,25 +134,15 @@ fun SettingsScreen(
                     icon = Icons.Outlined.Language,
                     title = "Language",
                     value = language,
-                    onClick = { viewModel.showToast("Language: $language") }
+                    onClick = { showLanguageDialog = true },
+                    testTag = "settings_language_row"
                 )
             }
 
-            // Scanning Section
+            // Scanning & Image Quality Section
             item {
                 Spacer(modifier = Modifier.height(6.dp))
-                SettingsSectionHeader("SCANNING")
-            }
-
-            item {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.AutoAwesome,
-                    title = "Auto-Capture",
-                    subtitle = "Automatically trigger shutter when document edge is detected",
-                    checked = autoCapture,
-                    onCheckedChange = { viewModel.toggleAutoCapture(it) },
-                    testTag = "settings_auto_capture_switch"
-                )
+                SettingsSectionHeader("SCANNING & QUALITY")
             }
 
             item {
@@ -159,7 +150,8 @@ fun SettingsScreen(
                     icon = Icons.Outlined.HighQuality,
                     title = "Default Image Quality",
                     value = defaultQuality,
-                    onClick = { viewModel.showToast("Quality: $defaultQuality") }
+                    onClick = { showQualityDialog = true },
+                    testTag = "settings_image_quality_row"
                 )
             }
 
@@ -173,18 +165,9 @@ fun SettingsScreen(
                 SettingsClickableRow(
                     icon = Icons.Outlined.Shield,
                     title = "Privacy & Offline Guarantee",
-                    subtitle = "100% on-device processing. No data collection.",
+                    subtitle = "100% on-device processing. No cloud uploads.",
                     onClick = { showPrivacyDialog = true },
                     testTag = "settings_privacy_policy_row"
-                )
-            }
-
-            item {
-                SettingsClickableRow(
-                    icon = Icons.Outlined.StarRate,
-                    title = "Rate ScanPro",
-                    subtitle = "Share your feedback on the store",
-                    onClick = { viewModel.showToast("Thank you for supporting ScanPro!") }
                 )
             }
 
@@ -418,6 +401,142 @@ fun SettingsScreen(
         )
     }
 
+    if (showQualityDialog) {
+        val qualityOptions = listOf(
+            "High (300 dpi)" to "Crisp text & best archival print quality",
+            "Medium (200 dpi)" to "Balanced clarity with moderate file size",
+            "Low (150 dpi)" to "Compact size, ideal for quick sharing"
+        )
+        AlertDialog(
+            onDismissRequest = { showQualityDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.HighQuality, contentDescription = null, tint = ScanProGreenContainer)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Default Image Quality")
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    qualityOptions.forEach { (option, desc) ->
+                        val isSelected = defaultQuality == option
+                        Surface(
+                            onClick = {
+                                viewModel.setDefaultQuality(option)
+                                showQualityDialog = false
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) ScanProGreenContainer.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) ScanProGreenContainer else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.setDefaultQuality(option)
+                                        showQualityDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = ScanProGreenContainer)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(option, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text(desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQualityDialog = false }) {
+                    Text("Cancel", color = ScanProGreenContainer)
+                }
+            }
+        )
+    }
+
+    if (showLanguageDialog) {
+        val languageOptions = listOf(
+            Triple("English (US)", "en-US", "Default"),
+            Triple("Spanish (Español)", "es", "Español"),
+            Triple("French (Français)", "fr", "Français"),
+            Triple("German (Deutsch)", "de", "Deutsch"),
+            Triple("Portuguese (Português)", "pt", "Português"),
+            Triple("Chinese (Simplified)", "zh-CN", "简体中文"),
+            Triple("Japanese (日本語)", "ja", "日本語"),
+            Triple("Hindi (हिन्दी)", "hi", "हिन्दी")
+        )
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Language, contentDescription = null, tint = ScanProGreenContainer)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Select App Language")
+                }
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(languageOptions.size) { idx ->
+                        val (name, tag, nativeName) = languageOptions[idx]
+                        val isSelected = language == name
+                        Surface(
+                            onClick = {
+                                viewModel.setLanguage(name, tag)
+                                showLanguageDialog = false
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) ScanProGreenContainer.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) ScanProGreenContainer else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.setLanguage(name, tag)
+                                        showLanguageDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = ScanProGreenContainer)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text(nativeName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text("Cancel", color = ScanProGreenContainer)
+                }
+            }
+        )
+    }
+
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
@@ -433,7 +552,7 @@ fun SettingsScreen(
                     text = "ScanPro is designed from the ground up to protect your privacy:\n\n" +
                             "• Zero Cloud Uploads: All document scanning, OCR, PDF merging, and encryption happen strictly on your device.\n\n" +
                             "• Offline First: ScanPro never requires an internet connection to process your sensitive records.\n\n" +
-                            "• Encrypted Storage: Protected documents are safeguarded with AES-256 standard encryption.",
+                            "• Encrypted Storage: Protected documents are safeguarded using AES-256 and standard PDF encryption.",
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )

@@ -15,7 +15,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
@@ -43,6 +45,7 @@ import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
 import com.example.model.DocCategory
 import com.example.model.DocFormat
+import com.example.model.DocSortOrder
 import com.example.model.DocumentItem
 import com.example.ui.components.DocCard
 import com.example.ui.components.ScanLineDivider
@@ -77,11 +80,13 @@ fun DocumentsLibraryScreen(
     val filterTab by viewModel.filterTab.collectAsState()
     val isGridView by viewModel.isGridView.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val sortOrder by viewModel.sortOrder.collectAsState()
 
     var isSearchExpanded by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
-    val filteredDocuments = remember(documents, filterTab, searchQuery) {
-        documents.filter { doc ->
+    val filteredDocuments = remember(documents, filterTab, searchQuery, sortOrder) {
+        val filtered = documents.filter { doc ->
             val matchesFilter = when (filterTab) {
                 "PDFs" -> doc.format == DocFormat.PDF
                 "Images" -> doc.format == DocFormat.JPG
@@ -93,6 +98,14 @@ fun DocumentsLibraryScreen(
                 doc.ocrText.contains(searchQuery, ignoreCase = true)
             }
             matchesFilter && matchesSearch
+        }
+        when (sortOrder) {
+            DocSortOrder.DATE_DESC -> filtered
+            DocSortOrder.DATE_ASC -> filtered.reversed()
+            DocSortOrder.NAME_ASC -> filtered.sortedBy { it.title.lowercase() }
+            DocSortOrder.NAME_DESC -> filtered.sortedByDescending { it.title.lowercase() }
+            DocSortOrder.SIZE_DESC -> filtered.sortedByDescending { it.fileSize }
+            DocSortOrder.SIZE_ASC -> filtered.sortedBy { it.fileSize }
         }
     }
 
@@ -132,12 +145,57 @@ fun DocumentsLibraryScreen(
                 },
                 navigationIcon = {
                     if (!isSearchExpanded) {
-                        IconButton(onClick = { viewModel.showToast("Menu opened") }) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "Menu",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
+                        Box {
+                            IconButton(
+                                onClick = { showSortMenu = true },
+                                modifier = Modifier.testTag("documents_sort_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                    contentDescription = "Sort Documents",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                Text(
+                                    text = "Sort by",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                )
+                                DocSortOrder.values().forEach { order ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (sortOrder == order) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = ScanProGreenContainer,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                } else {
+                                                    Spacer(modifier = Modifier.width(26.dp))
+                                                }
+                                                Text(
+                                                    text = order.displayName,
+                                                    fontWeight = if (sortOrder == order) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (sortOrder == order) ScanProGreenContainer else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.setSortOrder(order)
+                                            showSortMenu = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 },

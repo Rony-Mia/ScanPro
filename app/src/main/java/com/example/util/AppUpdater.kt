@@ -128,8 +128,20 @@ object AppUpdater {
      * backgrounded), then prompts the user to install it once done.
      */
     fun downloadAndInstall(context: Context, update: UpdateInfo) {
-        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        if (downloadManager == null) {
+            android.widget.Toast.makeText(context, "Download service unavailable", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+
         val fileName = "ScanPro_${update.versionName}.apk"
+        val destDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val downloadedFile = File(destDir, fileName)
+
+        // Delete any stale/cached download of this version first
+        if (downloadedFile.exists()) {
+            downloadedFile.delete()
+        }
 
         val request = DownloadManager.Request(Uri.parse(update.downloadUrl))
             .setTitle("ScanPro update")
@@ -138,30 +150,70 @@ object AppUpdater {
             .setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
             .setAllowedOverMetered(true)
 
-        val downloadId = downloadManager.enqueue(request)
+        var downloadId = -1L
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
-                val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (completedId == downloadId) {
-                    context.unregisterReceiver(this)
-                    val downloadedFile = File(
-                        context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS),
-                        fileName
-                    )
-                    if (downloadedFile.exists()) {
+                val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                if (completedId != -1L && completedId == downloadId) {
+                    try {
+                        context.unregisterReceiver(this)
+                    } catch (_: Exception) {}
+
+                    val query = DownloadManager.Query().setFilterById(downloadId)
+                    val cursor = downloadManager.query(query)
+                    var isSuccess = false
+                    var failureReason = ""
+
+                    if (cursor != null && cursor.moveToFirst()) {
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        val status = if (statusIndex >= 0) cursor.getInt(statusIndex) else -1
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            isSuccess = true
+                        } else {
+                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                            val reasonCode = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else 0
+                            failureReason = " (code $reasonCode)"
+                        }
+                        cursor.close()
+                    } else {
+                        cursor?.close()
+                    }
+
+                    if (isSuccess && downloadedFile.exists() && downloadedFile.length() > 0L) {
                         installApk(context, downloadedFile)
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Update download failed$failureReason. Please check your internet connection.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
             }
         }
 
+        // Register receiver BEFORE enqueue to eliminate race condition
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(receiver, filter)
+        }
+
+        try {
+            downloadId = downloadManager.enqueue(request)
+            android.widget.Toast.makeText(context, "Downloading update...", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Exception) {}
+            android.widget.Toast.makeText(
+                context,
+                "Failed to start download: ${e.localizedMessage ?: "Unknown error"}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
     }
 
