@@ -88,7 +88,7 @@ fun DocumentsLibraryScreen(
     val filteredDocuments = remember(documents, filterTab, searchQuery, sortOrder) {
         val filtered = documents.filter { doc ->
             val matchesFilter = when (filterTab) {
-                "PDFs" -> doc.format == DocFormat.PDF
+                "PDFs" -> doc.format == DocFormat.PDF || doc.format == DocFormat.DOCX
                 "Images" -> doc.format == DocFormat.JPG || doc.format == DocFormat.PNG
                 "Recent" -> doc.category == DocCategory.TODAY
                 else -> true

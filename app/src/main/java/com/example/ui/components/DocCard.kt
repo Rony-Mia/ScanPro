@@ -117,6 +117,7 @@ fun DocCard(
                             DocFormat.JPG -> "JPG"
                             DocFormat.PNG -> "PNG"
                             DocFormat.OCR -> "OCR"
+                            DocFormat.DOCX -> "DOCX"
                         },
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,

@@ -3,7 +3,7 @@ package com.example.model
 import androidx.annotation.DrawableRes
 
 enum class DocFormat {
-    PDF, JPG, PNG, OCR
+    PDF, JPG, PNG, OCR, DOCX
 }
 
 enum class DocCategory {
@@ -71,10 +71,13 @@ enum class ToolType(
     val category: ToolCategory
 ) {
     SCAN("Scan", ToolCategory.SCANNING),
+    ID_CARD("ID Card", ToolCategory.SCANNING),
+    QR_BARCODE("QR / Barcode", ToolCategory.SCANNING),
     OCR("OCR Text", ToolCategory.SCANNING),
     MERGE("Merge PDF", ToolCategory.EDITING),
     SPLIT("Split PDF", ToolCategory.EDITING),
     COMPRESS("Compress", ToolCategory.EDITING),
+    PDF_TO_WORD("PDF to Word", ToolCategory.EDITING),
     IMAGE_TO_PDF("Image to PDF", ToolCategory.EDITING),
     IMAGE_MERGER("Image Merger", ToolCategory.EDITING),
     PDF_TO_IMAGE("PDF to Image", ToolCategory.EDITING),
@@ -83,6 +86,11 @@ enum class ToolType(
     DELETE_PAGES("Delete Pages", ToolCategory.EDITING),
     PASSWORD("Password Protect", ToolCategory.SECURITY),
     SIGN("Sign Document", ToolCategory.SECURITY)
+}
+
+enum class IdCardLayout(val title: String, val subtitle: String) {
+    TOP_BOTTOM("Top & Bottom (Standard)", "Front on top half, back on bottom half"),
+    SIDE_BY_SIDE("Side by Side", "Front and back side-by-side horizontally")
 }
 
 enum class ToolCategory {

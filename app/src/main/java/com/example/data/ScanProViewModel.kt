@@ -27,6 +27,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     private val ocrEngine = OcrEngine(application)
     val imageMergerEngine = ImageMergerEngine(application)
     private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
+    private val thumbnailsDir = File(application.filesDir, "thumbnails").apply { mkdirs() }
     private val prefs = application.getSharedPreferences(Constants.PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
     private val _isOnboardingCompleted = MutableStateFlow(prefs.getBoolean(Constants.PREF_KEY_ONBOARDING_COMPLETED, false))
@@ -600,6 +601,83 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun createIdCardDocument(
+        frontUri: String,
+        backUri: String,
+        layout: com.example.model.IdCardLayout,
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val docId = "idcard-${System.currentTimeMillis()}"
+                val title = "IDCard_${System.currentTimeMillis() % 10000}.pdf"
+                val outputFile = File(documentsDir, "$docId.pdf")
+
+                val (qualityVal, maxDim) = when {
+                    _defaultQuality.value.contains("Low", true) -> Pair(0.70f, 1200)
+                    _defaultQuality.value.contains("Medium", true) -> Pair(0.85f, 1800)
+                    else -> Pair(0.95f, 2400)
+                }
+
+                val generatedFile = pdfEngine.createIdCardPdf(
+                    frontUri = frontUri,
+                    backUri = backUri,
+                    outputFile = outputFile,
+                    layout = layout,
+                    quality = qualityVal,
+                    maxDimension = maxDim
+                )
+                val realSize = PdfEngine.formatFileSize(generatedFile.length())
+
+                val thumbFile = File(thumbnailsDir, "thumb_$docId.jpg")
+                val thumbUri = pdfEngine.generateThumbnailForPdf(generatedFile, thumbFile)
+
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title, "application/pdf")
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$title"
+
+                val frontPage = ScannedPage(
+                    id = "p-1",
+                    pageNumber = 1,
+                    imageUri = frontUri
+                )
+                val backPage = ScannedPage(
+                    id = "p-2",
+                    pageNumber = 2,
+                    imageUri = backUri
+                )
+
+                val newDoc = DocumentItem(
+                    id = docId,
+                    title = title,
+                    date = "Today",
+                    time = "Just now",
+                    pageCount = 1,
+                    format = DocFormat.PDF,
+                    fileSize = realSize,
+                    thumbnailUri = thumbUri?.toString() ?: frontUri,
+                    category = DocCategory.TODAY,
+                    pages = listOf(frontPage, backPage),
+                    ocrText = "",
+                    filePath = generatedFile.absolutePath
+                )
+                _documents.update { listOf(newDoc) + it }
+                _selectedDocument.value = newDoc
+                withContext(Dispatchers.Main) {
+                    showToast("ID Card saved to $destinationDisplay ($realSize)")
+                    onComplete?.invoke(newDoc)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Failed to create ID Card PDF: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
     fun printDocument(context: android.content.Context, doc: DocumentItem) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1127,17 +1205,118 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Real OCR export to user storage (.txt or .docx). */
-    fun exportOcrText(doc: DocumentItem, format: String) {
+    fun exportOcrText(
+        doc: DocumentItem,
+        format: String,
+        fontFamily: String = "SolaimanLipi",
+        isComplexScript: Boolean = true
+    ) {
         val baseName = doc.title.substringBeforeLast(".")
         val text = doc.ocrText.ifBlank { "No text extracted from document." }
         val targetFileName = "$baseName.$format"
-        val mimeType = if (format == "docx") "application/vnd.openxmlformats-officedocument.wordprocessingml.document" else "text/plain"
 
+        if (format.equals("docx", ignoreCase = true)) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val tempDocxFile = File(documentsDir, "${doc.id}_ocr_export.docx")
+                    val paragraphs = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(text) }
+                    DocxEngine.writeSimpleDocx(
+                        paragraphs = paragraphs,
+                        fontFamily = fontFamily,
+                        isComplexScript = isComplexScript,
+                        outputFile = tempDocxFile
+                    )
+                    val mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), tempDocxFile, targetFileName, mimeType)
+                    val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+                    withContext(Dispatchers.Main) {
+                        showToast("Saved .docx to $destinationDisplay")
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        showToast("Failed to export .docx: ${e.localizedMessage ?: "Unknown error"}")
+                    }
+                }
+            }
+        } else {
+            val mimeType = "text/plain"
+            viewModelScope.launch(Dispatchers.IO) {
+                val saveResult = StorageHelper.saveTextToUserStorage(getApplication(), text, targetFileName, mimeType)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+                withContext(Dispatchers.Main) {
+                    showToast("Saved to $destinationDisplay")
+                }
+            }
+        }
+    }
+
+    /**
+     * Converts a PDF to a standard Microsoft Word (.docx) file using two-stage extraction
+     * (PDFTextStripper text-layer or offline Tesseract OCR fallback).
+     */
+    fun convertPdfToDocx(
+        doc: DocumentItem,
+        fontFamily: String = "SolaimanLipi",
+        isComplexScript: Boolean = true,
+        ocrLanguage: String = _ocrLanguage.value,
+        onComplete: ((DocumentItem, DocxEngine.DocxConversionResult) -> Unit)? = null
+    ) {
+        if (_isProcessing.value) return
+        _isProcessing.value = true
         viewModelScope.launch(Dispatchers.IO) {
-            val saveResult = StorageHelper.saveTextToUserStorage(getApplication(), text, targetFileName, mimeType)
-            val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
-            withContext(Dispatchers.Main) {
-                showToast("Saved to $destinationDisplay")
+            try {
+                val sourceFile = ensurePdfFileInternal(doc)
+                val docId = "docx-${System.currentTimeMillis()}"
+                val targetFileName = "${doc.title.substringBeforeLast(".")}.docx"
+                val outputFile = File(documentsDir, "$docId.docx")
+
+                val result = DocxEngine.convertPdfToDocx(
+                    context = getApplication(),
+                    pdfFile = sourceFile,
+                    outputFile = outputFile,
+                    fontFamily = fontFamily,
+                    isComplexScript = isComplexScript,
+                    ocrEngine = ocrEngine,
+                    ocrLanguage = ocrLanguage
+                )
+
+                val realSize = PdfEngine.formatFileSize(result.outputFile.length())
+                val mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), result.outputFile, targetFileName, mimeType)
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$targetFileName"
+
+                val newDoc = DocumentItem(
+                    id = docId,
+                    title = targetFileName,
+                    date = "Today",
+                    time = "Just now",
+                    pageCount = doc.pageCount.coerceAtLeast(1),
+                    format = DocFormat.DOCX,
+                    fileSize = realSize,
+                    thumbnailRes = 0,
+                    thumbnailUri = doc.thumbnailUri,
+                    category = DocCategory.TODAY,
+                    pages = doc.pages,
+                    ocrText = "",
+                    filePath = result.outputFile.absolutePath
+                )
+                _documents.update { listOf(newDoc) + it }
+                _selectedDocument.value = newDoc
+
+                withContext(Dispatchers.Main) {
+                    showToast("Saved to $destinationDisplay ($realSize)")
+                    onComplete?.invoke(newDoc, result)
+                }
+            } catch (e: DocxEngine.LegacyFontException) {
+                withContext(Dispatchers.Main) {
+                    showToast(e.message ?: "Legacy non-Unicode font detected.")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Conversion failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
             }
         }
     }

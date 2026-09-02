@@ -582,6 +582,129 @@ class PdfEngine(private val context: Context) {
     }
 
     /**
+     * Composites front and back scans of an ID card onto a single A4 page for standard printing.
+     */
+    suspend fun createIdCardPdf(
+        frontUri: String,
+        backUri: String,
+        outputFile: File,
+        layout: com.example.model.IdCardLayout = com.example.model.IdCardLayout.TOP_BOTTOM,
+        quality: Float = 0.95f,
+        maxDimension: Int = 2400
+    ): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val doc = PDDocument()
+
+        try {
+            val pageWidth = PDRectangle.A4.width
+            val pageHeight = PDRectangle.A4.height
+            val pdPage = PDPage(PDRectangle.A4)
+            doc.addPage(pdPage)
+
+            val rawFrontBitmap = openInputStream(Uri.parse(frontUri))?.use { BitmapFactory.decodeStream(it) }
+                ?: throw IllegalArgumentException("Could not load front card image")
+            val rawBackBitmap = openInputStream(Uri.parse(backUri))?.use { BitmapFactory.decodeStream(it) }
+                ?: throw IllegalArgumentException("Could not load back card image")
+
+            val frontBitmap = scaleBitmapDown(rawFrontBitmap, maxDimension)
+            val backBitmap = scaleBitmapDown(rawBackBitmap, maxDimension)
+
+            try {
+                val pdFrontImage = JPEGFactory.createFromImage(doc, frontBitmap, quality)
+                val pdBackImage = JPEGFactory.createFromImage(doc, backBitmap, quality)
+                val contentStream = PDPageContentStream(doc, pdPage)
+
+                if (layout == com.example.model.IdCardLayout.TOP_BOTTOM) {
+                    val slotMaxW = (pageWidth - 80f).coerceAtMost(360f)
+                    val slotMaxH = 227f
+
+                    val frontAspect = frontBitmap.width.toFloat() / frontBitmap.height.toFloat()
+                    var frontW = slotMaxW
+                    var frontH = frontW / frontAspect
+                    if (frontH > slotMaxH) {
+                        frontH = slotMaxH
+                        frontW = frontH * frontAspect
+                    }
+
+                    val backAspect = backBitmap.width.toFloat() / backBitmap.height.toFloat()
+                    var backW = slotMaxW
+                    var backH = backW / backAspect
+                    if (backH > slotMaxH) {
+                        backH = slotMaxH
+                        backW = backH * backAspect
+                    }
+
+                    val frontX = (pageWidth - frontW) / 2f
+                    val frontY = pageHeight * 0.58f - (frontH / 2f)
+
+                    val backX = (pageWidth - backW) / 2f
+                    val backY = pageHeight * 0.22f - (backH / 2f)
+
+                    contentStream.setLineWidth(0.75f)
+                    contentStream.setStrokingColor(0.75f, 0.75f, 0.75f)
+
+                    contentStream.drawImage(pdFrontImage, frontX, frontY, frontW, frontH)
+                    contentStream.addRect(frontX - 2f, frontY - 2f, frontW + 4f, frontH + 4f)
+                    contentStream.stroke()
+
+                    contentStream.drawImage(pdBackImage, backX, backY, backW, backH)
+                    contentStream.addRect(backX - 2f, backY - 2f, backW + 4f, backH + 4f)
+                    contentStream.stroke()
+                } else {
+                    val slotMaxW = (pageWidth - 60f) / 2f
+                    val slotMaxH = 220f
+
+                    val frontAspect = frontBitmap.width.toFloat() / frontBitmap.height.toFloat()
+                    var frontW = slotMaxW
+                    var frontH = frontW / frontAspect
+                    if (frontH > slotMaxH) {
+                        frontH = slotMaxH
+                        frontW = frontH * frontAspect
+                    }
+
+                    val backAspect = backBitmap.width.toFloat() / backBitmap.height.toFloat()
+                    var backW = slotMaxW
+                    var backH = backW / backAspect
+                    if (backH > slotMaxH) {
+                        backH = slotMaxH
+                        backW = backH * backAspect
+                    }
+
+                    val centerY = pageHeight * 0.5f
+                    val frontX = 30f + (slotMaxW - frontW) / 2f
+                    val frontY = centerY - (frontH / 2f)
+
+                    val backX = pageWidth / 2f + 10f + (slotMaxW - backW) / 2f
+                    val backY = centerY - (backH / 2f)
+
+                    contentStream.setLineWidth(0.75f)
+                    contentStream.setStrokingColor(0.75f, 0.75f, 0.75f)
+
+                    contentStream.drawImage(pdFrontImage, frontX, frontY, frontW, frontH)
+                    contentStream.addRect(frontX - 2f, frontY - 2f, frontW + 4f, frontH + 4f)
+                    contentStream.stroke()
+
+                    contentStream.drawImage(pdBackImage, backX, backY, backW, backH)
+                    contentStream.addRect(backX - 2f, backY - 2f, backW + 4f, backH + 4f)
+                    contentStream.stroke()
+                }
+
+                contentStream.close()
+            } finally {
+                if (frontBitmap !== rawFrontBitmap) frontBitmap.recycle()
+                rawFrontBitmap.recycle()
+                if (backBitmap !== rawBackBitmap) backBitmap.recycle()
+                rawBackBitmap.recycle()
+            }
+
+            doc.save(outputFile)
+        } finally {
+            doc.close()
+        }
+        outputFile
+    }
+
+    /**
      * Loads a Bitmap from a ScannedPage applying any rotation, crop, and filters.
      */
     fun loadPageBitmap(page: ScannedPage): Bitmap? {

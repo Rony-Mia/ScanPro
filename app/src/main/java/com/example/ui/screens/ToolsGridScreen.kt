@@ -42,10 +42,13 @@ data class ToolGridItem(
 fun ToolsGridScreen(
     viewModel: ScanProViewModel,
     onNavigateToScanReview: () -> Unit,
+    onNavigateToIdCard: () -> Unit,
+    onNavigateToQrBarcode: () -> Unit,
     onNavigateToOcr: () -> Unit,
     onNavigateToMerge: () -> Unit,
     onNavigateToSplit: () -> Unit,
     onNavigateToCompress: () -> Unit,
+    onNavigateToPdfToWord: () -> Unit,
     onNavigateToWatermark: () -> Unit,
     onNavigateToPassword: () -> Unit,
     onNavigateToImageToPdf: () -> Unit,
@@ -65,12 +68,15 @@ fun ToolsGridScreen(
     val toolItems = listOf(
         // Scanning (Soft Green Tint)
         ToolGridItem(ToolType.SCAN, Icons.Outlined.DocumentScanner, ToolCategoryScan, "tool_tile_scan"),
+        ToolGridItem(ToolType.ID_CARD, Icons.Outlined.Badge, ToolCategoryScan, "tool_tile_id_card"),
+        ToolGridItem(ToolType.QR_BARCODE, Icons.Outlined.QrCodeScanner, ToolCategoryScan, "tool_tile_qr_barcode"),
         ToolGridItem(ToolType.OCR, Icons.Outlined.TextSnippet, ToolCategoryScan, "tool_tile_ocr"),
 
         // Editing (Warm Paper Tint)
         ToolGridItem(ToolType.MERGE, Icons.Outlined.MergeType, ToolCategoryEdit, "tool_tile_merge"),
         ToolGridItem(ToolType.SPLIT, Icons.Outlined.Splitscreen, ToolCategoryEdit, "tool_tile_split"),
         ToolGridItem(ToolType.COMPRESS, Icons.Outlined.Compress, ToolCategoryEdit, "tool_tile_compress"),
+        ToolGridItem(ToolType.PDF_TO_WORD, Icons.Outlined.Article, ToolCategoryEdit, "tool_tile_pdf_to_word"),
         ToolGridItem(ToolType.IMAGE_TO_PDF, Icons.Outlined.Image, ToolCategoryEdit, "tool_tile_img_to_pdf"),
         ToolGridItem(ToolType.IMAGE_MERGER, Icons.Outlined.AutoAwesomeMosaic, ToolCategoryEdit, "tool_tile_img_merger"),
         ToolGridItem(ToolType.PDF_TO_IMAGE, Icons.Outlined.PictureAsPdf, ToolCategoryEdit, "tool_tile_pdf_to_img"),
@@ -129,10 +135,13 @@ fun ToolsGridScreen(
                     onClick = {
                         when (item.tool) {
                             ToolType.SCAN -> launchScannerFlow()
+                            ToolType.ID_CARD -> onNavigateToIdCard()
+                            ToolType.QR_BARCODE -> onNavigateToQrBarcode()
                             ToolType.OCR -> onNavigateToOcr()
                             ToolType.MERGE -> onNavigateToMerge()
                             ToolType.SPLIT -> onNavigateToSplit()
                             ToolType.COMPRESS -> onNavigateToCompress()
+                            ToolType.PDF_TO_WORD -> onNavigateToPdfToWord()
                             ToolType.WATERMARK -> onNavigateToWatermark()
                             ToolType.PASSWORD -> onNavigateToPassword()
                             ToolType.IMAGE_TO_PDF -> onNavigateToImageToPdf()

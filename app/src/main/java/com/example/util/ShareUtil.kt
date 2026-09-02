@@ -40,7 +40,12 @@ object ShareUtil {
             "${context.packageName}.fileprovider",
             file
         )
-        val mimeType = if (document.format == DocFormat.PDF) "application/pdf" else "image/*"
+        val mimeType = when (document.format) {
+            DocFormat.PDF -> "application/pdf"
+            DocFormat.DOCX -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            DocFormat.OCR -> "text/plain"
+            DocFormat.JPG, DocFormat.PNG -> "image/*"
+        }
 
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType

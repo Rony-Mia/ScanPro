@@ -35,6 +35,9 @@ object ScanProRoutes {
     const val ROTATE = "rotate"
     const val DELETE_PAGES = "delete_pages"
     const val SIGN = "sign"
+    const val ID_CARD = "id_card"
+    const val QR_BARCODE = "qr_barcode"
+    const val PDF_TO_WORD = "pdf_to_word"
 }
 
 @Composable
@@ -123,10 +126,13 @@ fun ScanProNavGraph(
                             ToolsGridScreen(
                                 viewModel = viewModel,
                                 onNavigateToScanReview = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
+                                onNavigateToIdCard = { navController.navigate(ScanProRoutes.ID_CARD) },
+                                onNavigateToQrBarcode = { navController.navigate(ScanProRoutes.QR_BARCODE) },
                                 onNavigateToOcr = { navController.navigate(ScanProRoutes.OCR) },
                                 onNavigateToMerge = { navController.navigate(ScanProRoutes.MERGE) },
                                 onNavigateToSplit = { navController.navigate(ScanProRoutes.SPLIT) },
                                 onNavigateToCompress = { navController.navigate(ScanProRoutes.COMPRESS) },
+                                onNavigateToPdfToWord = { navController.navigate(ScanProRoutes.PDF_TO_WORD) },
                                 onNavigateToWatermark = { navController.navigate(ScanProRoutes.WATERMARK) },
                                 onNavigateToPassword = { navController.navigate(ScanProRoutes.PASSWORD) },
                                 onNavigateToImageToPdf = { navController.navigate(ScanProRoutes.IMAGE_TO_PDF) },
@@ -350,6 +356,39 @@ fun ScanProNavGraph(
                     navController.navigate(ScanProRoutes.PDF_VIEWER) {
                         popUpTo(ScanProRoutes.MAIN)
                     }
+                }
+            )
+        }
+
+        // 16. ID Card Scanner Screen
+        composable(ScanProRoutes.ID_CARD) {
+            IdCardScannerScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onGenerated = { idCardDoc ->
+                    viewModel.selectDocument(idCardDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
+            )
+        }
+
+        // 17. QR / Barcode Scanner Screen
+        composable(ScanProRoutes.QR_BARCODE) {
+            QrBarcodeScannerScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        // 18. PDF to Word (.docx) Screen
+        composable(ScanProRoutes.PDF_TO_WORD) {
+            PdfToWordScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onConverted = { _ ->
+                    // Keep on screen to allow viewing result details, sharing or opening the converted Word file
                 }
             )
         }
