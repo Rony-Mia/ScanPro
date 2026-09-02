@@ -23,6 +23,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
 
     private val pdfEngine = PdfEngine(application)
     private val ocrEngine = OcrEngine(application)
+    val imageMergerEngine = ImageMergerEngine(application)
     private val documentsDir = File(application.filesDir, "documents").apply { mkdirs() }
     private val prefs = application.getSharedPreferences(Constants.PREFS_NAME, android.content.Context.MODE_PRIVATE)
 
@@ -1016,6 +1017,116 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showToast("Text extraction failed: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /**
+     * Real "Image Merger": Merges multiple selected images into a custom styled collage layout
+     * and exports as either a multi-page PDF or high-resolution images according to [config].
+     */
+    fun mergeAndExportImages(
+        images: List<MergerImageItem>,
+        config: ImageMergerConfig,
+        customTitle: String = "",
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
+        if (images.isEmpty()) {
+            showToast("Please add at least 1 image")
+            return
+        }
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val totalPages = imageMergerEngine.calculateTotalPages(images.size, config)
+                val baseTitle = if (customTitle.isNotBlank()) customTitle.trim() else "Merged_Collage_${System.currentTimeMillis() % 10000}"
+                val docId = "doc-${System.currentTimeMillis()}"
+
+                when (config.exportFormat) {
+                    MergerExportFormat.PDF -> {
+                        val pdfTitle = if (baseTitle.endsWith(".pdf", ignoreCase = true)) baseTitle else "$baseTitle.pdf"
+                        val outputFile = File(documentsDir, "$docId.pdf")
+
+                        val generatedFile = imageMergerEngine.exportToPdf(images, config, outputFile)
+                        val realSize = PdfEngine.formatFileSize(generatedFile.length())
+                        val thumbFile = File(documentsDir, "${docId}_thumb.jpg")
+                        val thumbnailUri = pdfEngine.generateThumbnailForPdf(generatedFile, thumbFile)?.toString()
+
+                        val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, pdfTitle, "application/pdf")
+                        val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$pdfTitle"
+
+                        val newDoc = DocumentItem(
+                            id = docId,
+                            title = pdfTitle,
+                            date = "Today",
+                            time = "Just now",
+                            pageCount = totalPages,
+                            format = DocFormat.PDF,
+                            fileSize = realSize,
+                            thumbnailUri = thumbnailUri,
+                            category = DocCategory.TODAY,
+                            filePath = generatedFile.absolutePath
+                        )
+
+                        _documents.update { listOf(newDoc) + it }
+                        _selectedDocument.value = newDoc
+                        withContext(Dispatchers.Main) {
+                            showToast("Saved to $destinationDisplay ($realSize)")
+                            onComplete?.invoke(newDoc)
+                        }
+                    }
+                    MergerExportFormat.IMAGE_PNG, MergerExportFormat.IMAGE_JPG -> {
+                        val isPng = config.exportFormat == MergerExportFormat.IMAGE_PNG
+                        val ext = if (isPng) "png" else "jpg"
+                        val mimeType = if (isPng) "image/png" else "image/jpeg"
+                        val outputDir = File(documentsDir, "merger_img_${System.currentTimeMillis()}").apply { mkdirs() }
+
+                        val exportedFiles = imageMergerEngine.exportToImages(images, config, outputDir, baseTitle)
+                        if (exportedFiles.isEmpty()) throw IllegalStateException("Failed to export merged images")
+
+                        val firstFile = exportedFiles.first()
+                        val totalSize = PdfEngine.formatFileSize(exportedFiles.sumOf { it.length() })
+                        var primarySaveDisplay = ""
+
+                        for (f in exportedFiles) {
+                            val res = StorageHelper.saveFileToUserStorage(getApplication(), f, f.name, mimeType)
+                            if (primarySaveDisplay.isEmpty() && res.success) {
+                                primarySaveDisplay = res.displayPath
+                            }
+                        }
+
+                        if (primarySaveDisplay.isEmpty()) {
+                            primarySaveDisplay = "${Constants.DEFAULT_SAVE_LOCATION_NAME}/${firstFile.name}"
+                        }
+
+                        val newDoc = DocumentItem(
+                            id = docId,
+                            title = if (exportedFiles.size == 1) firstFile.name else "$baseTitle ($totalPages pages)",
+                            date = "Today",
+                            time = "Just now",
+                            pageCount = exportedFiles.size,
+                            format = DocFormat.JPG,
+                            fileSize = totalSize,
+                            thumbnailUri = Uri.fromFile(firstFile).toString(),
+                            category = DocCategory.TODAY,
+                            filePath = firstFile.absolutePath
+                        )
+
+                        _documents.update { listOf(newDoc) + it }
+                        _selectedDocument.value = newDoc
+                        withContext(Dispatchers.Main) {
+                            showToast("Saved to $primarySaveDisplay ($totalSize)")
+                            onComplete?.invoke(newDoc)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Merge failed: ${e.localizedMessage ?: "Unknown error"}")
                 }
             } finally {
                 _isProcessing.value = false

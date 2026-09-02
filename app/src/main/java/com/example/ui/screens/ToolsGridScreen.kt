@@ -49,6 +49,7 @@ fun ToolsGridScreen(
     onNavigateToWatermark: () -> Unit,
     onNavigateToPassword: () -> Unit,
     onNavigateToImageToPdf: () -> Unit,
+    onNavigateToImageMerger: () -> Unit,
     onNavigateToPdfToImage: () -> Unit,
     onNavigateToRotate: () -> Unit,
     onNavigateToDeletePages: () -> Unit,
@@ -71,6 +72,7 @@ fun ToolsGridScreen(
         ToolGridItem(ToolType.SPLIT, Icons.Outlined.Splitscreen, ToolCategoryEdit, "tool_tile_split"),
         ToolGridItem(ToolType.COMPRESS, Icons.Outlined.Compress, ToolCategoryEdit, "tool_tile_compress"),
         ToolGridItem(ToolType.IMAGE_TO_PDF, Icons.Outlined.Image, ToolCategoryEdit, "tool_tile_img_to_pdf"),
+        ToolGridItem(ToolType.IMAGE_MERGER, Icons.Outlined.AutoAwesomeMosaic, ToolCategoryEdit, "tool_tile_img_merger"),
         ToolGridItem(ToolType.PDF_TO_IMAGE, Icons.Outlined.PictureAsPdf, ToolCategoryEdit, "tool_tile_pdf_to_img"),
         ToolGridItem(ToolType.WATERMARK, Icons.Outlined.WaterDrop, ToolCategoryEdit, "tool_tile_watermark"),
         ToolGridItem(ToolType.ROTATE, Icons.Outlined.RotateRight, ToolCategoryEdit, "tool_tile_rotate"),
@@ -134,6 +136,7 @@ fun ToolsGridScreen(
                             ToolType.WATERMARK -> onNavigateToWatermark()
                             ToolType.PASSWORD -> onNavigateToPassword()
                             ToolType.IMAGE_TO_PDF -> onNavigateToImageToPdf()
+                            ToolType.IMAGE_MERGER -> onNavigateToImageMerger()
                             ToolType.PDF_TO_IMAGE -> onNavigateToPdfToImage()
                             ToolType.ROTATE -> onNavigateToRotate()
                             ToolType.DELETE_PAGES -> onNavigateToDeletePages()

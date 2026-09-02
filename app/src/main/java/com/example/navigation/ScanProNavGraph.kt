@@ -30,6 +30,7 @@ object ScanProRoutes {
     const val WATERMARK = "watermark"
     const val OCR = "ocr"
     const val IMAGE_TO_PDF = "image_to_pdf"
+    const val IMAGE_MERGER = "image_merger"
     const val PDF_TO_IMAGE = "pdf_to_image"
     const val ROTATE = "rotate"
     const val DELETE_PAGES = "delete_pages"
@@ -129,6 +130,7 @@ fun ScanProNavGraph(
                                 onNavigateToWatermark = { navController.navigate(ScanProRoutes.WATERMARK) },
                                 onNavigateToPassword = { navController.navigate(ScanProRoutes.PASSWORD) },
                                 onNavigateToImageToPdf = { navController.navigate(ScanProRoutes.IMAGE_TO_PDF) },
+                                onNavigateToImageMerger = { navController.navigate(ScanProRoutes.IMAGE_MERGER) },
                                 onNavigateToPdfToImage = { navController.navigate(ScanProRoutes.PDF_TO_IMAGE) },
                                 onNavigateToRotate = { navController.navigate(ScanProRoutes.ROTATE) },
                                 onNavigateToDeletePages = { navController.navigate(ScanProRoutes.DELETE_PAGES) },
@@ -275,7 +277,28 @@ fun ScanProNavGraph(
             )
         }
 
-        // 12. PDF to Image Screen
+        // 12. Image Merger Screen (Collage / Multi-Image Merger)
+        composable(ScanProRoutes.IMAGE_MERGER) {
+            ImageMergerScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onMerged = { newDoc ->
+                    if (newDoc.format == com.example.model.DocFormat.PDF) {
+                        viewModel.selectDocument(newDoc)
+                        navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                            popUpTo(ScanProRoutes.MAIN)
+                        }
+                    } else {
+                        currentBottomTab = BottomTab.DOCUMENTS
+                        navController.navigate(ScanProRoutes.MAIN) {
+                            popUpTo(ScanProRoutes.MAIN) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
+        // 13. PDF to Image Screen
         composable(ScanProRoutes.PDF_TO_IMAGE) {
             PdfToImageScreen(
                 viewModel = viewModel,

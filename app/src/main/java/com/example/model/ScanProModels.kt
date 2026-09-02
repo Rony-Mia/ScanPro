@@ -76,6 +76,7 @@ enum class ToolType(
     SPLIT("Split PDF", ToolCategory.EDITING),
     COMPRESS("Compress", ToolCategory.EDITING),
     IMAGE_TO_PDF("Image to PDF", ToolCategory.EDITING),
+    IMAGE_MERGER("Image Merger", ToolCategory.EDITING),
     PDF_TO_IMAGE("PDF to Image", ToolCategory.EDITING),
     WATERMARK("Add Watermark", ToolCategory.EDITING),
     ROTATE("Rotate Pages", ToolCategory.EDITING),
