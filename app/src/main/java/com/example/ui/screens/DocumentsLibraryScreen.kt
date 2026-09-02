@@ -89,7 +89,7 @@ fun DocumentsLibraryScreen(
         val filtered = documents.filter { doc ->
             val matchesFilter = when (filterTab) {
                 "PDFs" -> doc.format == DocFormat.PDF
-                "Images" -> doc.format == DocFormat.JPG
+                "Images" -> doc.format == DocFormat.JPG || doc.format == DocFormat.PNG
                 "Recent" -> doc.category == DocCategory.TODAY
                 else -> true
             }
@@ -459,7 +459,7 @@ fun DocumentsLibraryScreen(
                                 ) {
                                     val thumbModel: Any? = when {
                                         !doc.thumbnailUri.isNullOrEmpty() -> doc.thumbnailUri
-                                        !doc.filePath.isNullOrEmpty() && doc.format == DocFormat.JPG -> java.io.File(doc.filePath)
+                                        !doc.filePath.isNullOrEmpty() && (doc.format == DocFormat.JPG || doc.format == DocFormat.PNG) -> java.io.File(doc.filePath)
                                         doc.thumbnailRes != 0 -> doc.thumbnailRes
                                         else -> null
                                     }

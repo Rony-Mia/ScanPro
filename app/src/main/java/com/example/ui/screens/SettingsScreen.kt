@@ -55,6 +55,7 @@ fun SettingsScreen(
     var showSaveLocationDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showOcrLanguagesDialog by remember { mutableStateOf(false) }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -152,6 +153,16 @@ fun SettingsScreen(
                     value = defaultQuality,
                     onClick = { showQualityDialog = true },
                     testTag = "settings_image_quality_row"
+                )
+            }
+
+            item {
+                SettingsClickableRow(
+                    icon = Icons.Outlined.Language,
+                    title = "OCR Language Packs",
+                    subtitle = "English & Bengali pre-installed. Download offline packs.",
+                    onClick = { showOcrLanguagesDialog = true },
+                    testTag = "settings_ocr_languages_row"
                 )
             }
 
@@ -537,6 +548,13 @@ fun SettingsScreen(
         )
     }
 
+    if (showOcrLanguagesDialog) {
+        com.example.ui.components.ManageOcrLanguagesDialog(
+            viewModel = viewModel,
+            onDismiss = { showOcrLanguagesDialog = false }
+        )
+    }
+
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
@@ -551,7 +569,7 @@ fun SettingsScreen(
                 Text(
                     text = "ScanPro is designed from the ground up to protect your privacy:\n\n" +
                             "• Zero Cloud Uploads: All document scanning, OCR, PDF merging, and encryption happen strictly on your device.\n\n" +
-                            "• Offline First: ScanPro never requires an internet connection to process your sensitive records.\n\n" +
+                            "• Offline Multi-Language OCR: Bundled English and Bengali OCR work immediately offline with zero setup. Additional language packs can be downloaded once and then work 100% offline forever.\n\n" +
                             "• Encrypted Storage: Protected documents are safeguarded using AES-256 and standard PDF encryption.",
                     fontSize = 14.sp,
                     lineHeight = 20.sp

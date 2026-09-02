@@ -115,6 +115,7 @@ fun DocCard(
                         text = when (document.format) {
                             DocFormat.PDF -> "PDF"
                             DocFormat.JPG -> "JPG"
+                            DocFormat.PNG -> "PNG"
                             DocFormat.OCR -> "OCR"
                         },
                         fontSize = 8.sp,

@@ -3,7 +3,7 @@ package com.example.model
 import androidx.annotation.DrawableRes
 
 enum class DocFormat {
-    PDF, JPG, OCR
+    PDF, JPG, PNG, OCR
 }
 
 enum class DocCategory {

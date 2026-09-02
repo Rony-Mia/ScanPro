@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +22,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.FilterVintage
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,12 +37,16 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.data.ScanProViewModel
+import com.example.model.DocFormat
 import com.example.model.DocumentItem
 import com.example.model.PageFilter
 import com.example.ui.components.ScanLineDivider
@@ -44,6 +54,8 @@ import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
 import com.example.ui.theme.ScanProGreenPrimary
 import com.example.util.rememberDocumentScannerLauncher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +65,7 @@ fun ScanReviewScreen(
     onDone: (DocumentItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Real scanner (camera + gallery import) instead of the old fake camera mock.
-    // Appends newly captured/imported pages to the current draft.
+    val context = LocalContext.current
     val launchAddPageScan = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
         viewModel.addScannedPagesFromUris(uris)
     }
@@ -65,10 +76,52 @@ fun ScanReviewScreen(
 
     val activePage = draftPages.getOrNull(selectedIndex) ?: draftPages.firstOrNull()
     var isCropModeActive by remember { mutableStateOf(true) }
+    var showSaveFormatDialog by remember { mutableStateOf(false) }
+    var chosenSaveFormat by remember { mutableStateOf(DocFormat.PDF) }
 
-    // Corner handle offsets for crop overlay
-    var cropTopLeftX by remember { mutableStateOf(0f) }
-    var cropTopLeftY by remember { mutableStateOf(0f) }
+    // Decode intrinsic bitmap dimensions to ensure exact letterbox coordinate calculations
+    var imageIntrinsicSize by remember(activePage?.id, activePage?.imageUri, activePage?.drawableRes) {
+        mutableStateOf<Pair<Int, Int>?>(null)
+    }
+
+    LaunchedEffect(activePage?.id, activePage?.imageUri, activePage?.drawableRes) {
+        if (activePage == null) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (!activePage.imageUri.isNullOrEmpty()) {
+                    val uri = Uri.parse(activePage.imageUri)
+                    if (uri.scheme == "file") {
+                        BitmapFactory.decodeFile(uri.path, options)
+                    } else {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            BitmapFactory.decodeStream(stream, null, options)
+                        }
+                    }
+                } else if (activePage.drawableRes != 0) {
+                    BitmapFactory.decodeResource(context.resources, activePage.drawableRes, options)
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    imageIntrinsicSize = Pair(options.outWidth, options.outHeight)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    if (showSaveFormatDialog) {
+        SaveFormatPickerDialog(
+            pageCount = draftPages.size,
+            selectedFormat = chosenSaveFormat,
+            onFormatSelected = { chosenSaveFormat = it },
+            onDismiss = { showSaveFormatDialog = false },
+            onConfirm = { format ->
+                showSaveFormatDialog = false
+                viewModel.finishScanAndSave(format) { savedDoc ->
+                    onDone(savedDoc)
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -97,9 +150,10 @@ fun ScanReviewScreen(
                 actions = {
                     TextButton(
                         onClick = {
-                            viewModel.finishScanAndSave { savedDoc ->
-                                onDone(savedDoc)
+                            if (draftPages.size > 1) {
+                                chosenSaveFormat = DocFormat.PDF
                             }
+                            showSaveFormatDialog = true
                         },
                         enabled = !isProcessing && draftPages.isNotEmpty(),
                         modifier = Modifier.testTag("scan_review_done_button")
@@ -250,6 +304,35 @@ fun ScanReviewScreen(
                         val containerWidthPx = constraints.maxWidth.toFloat()
                         val containerHeightPx = constraints.maxHeight.toFloat()
 
+                        // Calculate actual letterboxed/pillarboxed image rectangle under ContentScale.Fit
+                        val (rawW, rawH) = imageIntrinsicSize ?: Pair(containerWidthPx.toInt(), containerHeightPx.toInt())
+                        val isRotated90or270 = (activePage.rotationAngle.toInt() % 180 != 0)
+                        val effectiveW = if (isRotated90or270) rawH else rawW
+                        val effectiveH = if (isRotated90or270) rawW else rawH
+                        val imageAspect = if (effectiveH > 0) effectiveW.toFloat() / effectiveH.toFloat() else (containerWidthPx / containerHeightPx)
+                        val containerAspect = containerWidthPx / containerHeightPx
+
+                        val displayedWidthPx: Float
+                        val displayedHeightPx: Float
+                        val displayedOffsetXPx: Float
+                        val displayedOffsetYPx: Float
+
+                        if (imageAspect > containerAspect) {
+                            // Letterboxed top and bottom
+                            displayedWidthPx = containerWidthPx
+                            displayedHeightPx = containerWidthPx / imageAspect
+                            displayedOffsetXPx = 0f
+                            displayedOffsetYPx = (containerHeightPx - displayedHeightPx) / 2f
+                        } else {
+                            // Pillarboxed left and right
+                            displayedHeightPx = containerHeightPx
+                            displayedWidthPx = containerHeightPx * imageAspect
+                            displayedOffsetXPx = (containerWidthPx - displayedWidthPx) / 2f
+                            displayedOffsetYPx = 0f
+                        }
+
+                        val density = LocalDensity.current
+
                         AsyncImage(
                             model = activePage.imageUri ?: activePage.drawableRes,
                             contentDescription = "Active Document Preview",
@@ -262,19 +345,14 @@ fun ScanReviewScreen(
                             } else null
                         )
 
-                        // Interactive Crop Overlay with Draggable Corner Handles
-                        if (isCropModeActive) {
-                            val leftPx = (activePage.cropLeft * containerWidthPx).coerceIn(0f, containerWidthPx)
-                            val topPx = (activePage.cropTop * containerHeightPx).coerceIn(0f, containerHeightPx)
-                            val rightPx = (activePage.cropRight * containerWidthPx).coerceIn(leftPx + 20f, containerWidthPx)
-                            val bottomPx = (activePage.cropBottom * containerHeightPx).coerceIn(topPx + 20f, containerHeightPx)
+                        // Interactive Crop Overlay mapped 1:1 to image displayed pixels
+                        if (isCropModeActive && displayedWidthPx > 0f && displayedHeightPx > 0f) {
+                            val cropOffsetXDp = with(density) { (displayedOffsetXPx + displayedWidthPx * activePage.cropLeft).toDp() }
+                            val cropOffsetYDp = with(density) { (displayedOffsetYPx + displayedHeightPx * activePage.cropTop).toDp() }
+                            val cropWidthDp = with(density) { (displayedWidthPx * (activePage.cropRight - activePage.cropLeft)).toDp().coerceAtLeast(24.dp) }
+                            val cropHeightDp = with(density) { (displayedHeightPx * (activePage.cropBottom - activePage.cropTop)).toDp().coerceAtLeast(24.dp) }
 
-                            val cropWidthDp = (maxWidth * (activePage.cropRight - activePage.cropLeft)).coerceAtLeast(24.dp)
-                            val cropHeightDp = (maxHeight * (activePage.cropBottom - activePage.cropTop)).coerceAtLeast(24.dp)
-                            val cropOffsetXDp = (maxWidth * activePage.cropLeft)
-                            val cropOffsetYDp = (maxHeight * activePage.cropTop)
-
-                            // Semi-transparent dimmed outer area
+                            // Semi-transparent dimmed crop area box
                             Box(
                                 modifier = Modifier
                                     .offset(x = cropOffsetXDp, y = cropOffsetYDp)
@@ -290,13 +368,13 @@ fun ScanReviewScreen(
                                         x = cropOffsetXDp - 12.dp,
                                         y = cropOffsetYDp - 12.dp
                                     )
-                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                    .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
-                                            val dLeft = dragAmount.x / containerWidthPx
-                                            val dTop = dragAmount.y / containerHeightPx
-                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.1f)
-                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.1f)
+                                            val dLeft = dragAmount.x / displayedWidthPx
+                                            val dTop = dragAmount.y / displayedHeightPx
+                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.05f)
+                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.05f)
                                             viewModel.updateActivePageCrop(newLeft, newTop, activePage.cropRight, activePage.cropBottom)
                                         }
                                     }
@@ -309,13 +387,13 @@ fun ScanReviewScreen(
                                         x = cropOffsetXDp + cropWidthDp - 12.dp,
                                         y = cropOffsetYDp - 12.dp
                                     )
-                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                    .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
-                                            val dRight = dragAmount.x / containerWidthPx
-                                            val dTop = dragAmount.y / containerHeightPx
-                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.1f, 1f)
-                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.1f)
+                                            val dRight = dragAmount.x / displayedWidthPx
+                                            val dTop = dragAmount.y / displayedHeightPx
+                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.05f, 1f)
+                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.05f)
                                             viewModel.updateActivePageCrop(activePage.cropLeft, newTop, newRight, activePage.cropBottom)
                                         }
                                     }
@@ -328,13 +406,13 @@ fun ScanReviewScreen(
                                         x = cropOffsetXDp - 12.dp,
                                         y = cropOffsetYDp + cropHeightDp - 12.dp
                                     )
-                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                    .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
-                                            val dLeft = dragAmount.x / containerWidthPx
-                                            val dBottom = dragAmount.y / containerHeightPx
-                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.1f)
-                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.1f, 1f)
+                                            val dLeft = dragAmount.x / displayedWidthPx
+                                            val dBottom = dragAmount.y / displayedHeightPx
+                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.05f)
+                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.05f, 1f)
                                             viewModel.updateActivePageCrop(newLeft, activePage.cropTop, activePage.cropRight, newBottom)
                                         }
                                     }
@@ -347,13 +425,13 @@ fun ScanReviewScreen(
                                         x = cropOffsetXDp + cropWidthDp - 12.dp,
                                         y = cropOffsetYDp + cropHeightDp - 12.dp
                                     )
-                                    .pointerInput(activePage.id, containerWidthPx, containerHeightPx) {
+                                    .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
-                                            val dRight = dragAmount.x / containerWidthPx
-                                            val dBottom = dragAmount.y / containerHeightPx
-                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.1f, 1f)
-                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.1f, 1f)
+                                            val dRight = dragAmount.x / displayedWidthPx
+                                            val dBottom = dragAmount.y / displayedHeightPx
+                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.05f, 1f)
+                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.05f, 1f)
                                             viewModel.updateActivePageCrop(activePage.cropLeft, activePage.cropTop, newRight, newBottom)
                                         }
                                     }
@@ -422,6 +500,213 @@ fun ScanReviewScreen(
                         testTag = "review_delete_button"
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveFormatPickerDialog(
+    pageCount: Int,
+    selectedFormat: DocFormat,
+    onFormatSelected: (DocFormat) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (DocFormat) -> Unit
+) {
+    var format by remember { mutableStateOf(selectedFormat) }
+    val isMultiPage = pageCount > 1
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Dialog Title
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.Description,
+                        contentDescription = null,
+                        tint = ScanProGreenContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Save Document As",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                if (isMultiPage) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Image formats only support single-page documents — choose PDF or delete extra pages.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+
+                // Format Options
+                FormatOptionRow(
+                    title = "PDF Document (.pdf)",
+                    subtitle = "Multi-page or single-page document (Recommended)",
+                    icon = Icons.Outlined.PictureAsPdf,
+                    isSelected = format == DocFormat.PDF,
+                    isEnabled = true,
+                    onClick = {
+                        format = DocFormat.PDF
+                        onFormatSelected(DocFormat.PDF)
+                    },
+                    testTag = "format_option_pdf"
+                )
+
+                FormatOptionRow(
+                    title = "JPEG Image (.jpg)",
+                    subtitle = if (isMultiPage) "Single page only ($pageCount pages in draft)" else "Standard compressed image file",
+                    icon = Icons.Outlined.Image,
+                    isSelected = format == DocFormat.JPG,
+                    isEnabled = !isMultiPage,
+                    onClick = {
+                        format = DocFormat.JPG
+                        onFormatSelected(DocFormat.JPG)
+                    },
+                    testTag = "format_option_jpg"
+                )
+
+                FormatOptionRow(
+                    title = "PNG Image (.png)",
+                    subtitle = if (isMultiPage) "Single page only ($pageCount pages in draft)" else "Lossless high quality image file",
+                    icon = Icons.Outlined.Image,
+                    isSelected = format == DocFormat.PNG,
+                    isEnabled = !isMultiPage,
+                    onClick = {
+                        format = DocFormat.PNG
+                        onFormatSelected(DocFormat.PNG)
+                    },
+                    testTag = "format_option_png"
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(format) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ScanProGreenContainer),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("confirm_save_format_button")
+                    ) {
+                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FormatOptionRow(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    isEnabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    Surface(
+        onClick = onClick,
+        enabled = isEnabled,
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            !isEnabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+            isSelected -> ScanProGreenContainer.copy(alpha = 0.12f)
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        },
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = when {
+                !isEnabled -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)
+                isSelected -> ScanProGreenContainer
+                else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            }
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = isSelected,
+                onClick = onClick,
+                enabled = isEnabled,
+                colors = RadioButtonDefaults.colors(selectedColor = ScanProGreenContainer)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isEnabled) {
+                    if (isSelected) ScanProGreenContainer else MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                },
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = if (isEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                )
             }
         }
     }

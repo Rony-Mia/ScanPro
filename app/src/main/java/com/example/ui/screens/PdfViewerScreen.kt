@@ -94,7 +94,7 @@ fun PdfViewerScreen(
                 pageRenderError = false
             } else {
                 // If direct render returned null, check if single JPG file exists
-                if (document.format == DocFormat.JPG && !document.filePath.isNullOrEmpty() && File(document.filePath).exists()) {
+                if ((document.format == DocFormat.JPG || document.format == DocFormat.PNG) && !document.filePath.isNullOrEmpty() && File(document.filePath).exists()) {
                     pageBitmap = null
                     pageRenderError = false
                 } else if (!document.thumbnailUri.isNullOrEmpty()) {
@@ -323,7 +323,7 @@ fun PdfViewerScreen(
                         )
                     }
 
-                    document.format == DocFormat.JPG && !document.filePath.isNullOrEmpty() -> {
+                    (document.format == DocFormat.JPG || document.format == DocFormat.PNG) && !document.filePath.isNullOrEmpty() -> {
                         AsyncImage(
                             model = File(document.filePath),
                             contentDescription = "Document Page ${currentPageIndex + 1}",
@@ -486,7 +486,7 @@ fun PdfViewerScreen(
                                             contentScale = ContentScale.Crop
                                         )
                                     }
-                                    document.format == DocFormat.JPG && !document.filePath.isNullOrEmpty() -> {
+                                    (document.format == DocFormat.JPG || document.format == DocFormat.PNG) && !document.filePath.isNullOrEmpty() -> {
                                         AsyncImage(
                                             model = File(document.filePath),
                                             contentDescription = "Thumb ${pageIdx + 1}",

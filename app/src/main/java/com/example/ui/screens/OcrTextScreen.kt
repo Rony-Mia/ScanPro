@@ -2,15 +2,18 @@ package com.example.ui.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.TextSnippet
@@ -25,20 +28,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.OcrEngine
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
 import com.example.ui.components.ChangeDocumentButton
 import com.example.ui.components.DocThumbnailImage
+import com.example.ui.components.ManageOcrLanguagesDialog
 import com.example.ui.components.NoDocSelectedScaffold
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
-import com.example.ui.theme.ScanProGreenPrimary
 import com.example.util.ShareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +53,15 @@ fun OcrTextScreen(
 ) {
     val selectedDoc by viewModel.selectedDocument.collectAsState()
     val allDocs by viewModel.documents.collectAsState()
+    val selectedOcrLang by viewModel.ocrLanguage.collectAsState()
+    val installedLangs by viewModel.installedOcrLanguages.collectAsState()
+
+    var showManageLanguagesDialog by remember { mutableStateOf(false) }
+    var showLanguagePickerMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshInstalledOcrLanguages()
+    }
 
     // If no doc is currently selected, auto-select the first doc from library if present
     LaunchedEffect(selectedDoc, allDocs) {
@@ -76,17 +88,15 @@ fun OcrTextScreen(
     val isProcessing by viewModel.isProcessing.collectAsState()
     val ocrProgress by viewModel.ocrProgress.collectAsState()
 
-    // Extracted text now comes from the ViewModel's real OCR result (doc.ocrText),
-    // not a hardcoded sample string.
-    var extractedText by remember(doc.ocrText) {
+    var extractedText by remember(doc.id, doc.ocrText) {
         mutableStateOf(doc.ocrText)
     }
 
-    // Run real on-device OCR extraction the first time this screen opens for a document
+    // Run real on-device Tesseract OCR extraction the first time this screen opens for a document
     // that doesn't already have extracted text cached.
-    LaunchedEffect(doc.id) {
+    LaunchedEffect(doc.id, selectedOcrLang) {
         if (doc.ocrText.isBlank()) {
-            viewModel.extractTextFromDocument(doc) { result ->
+            viewModel.extractTextFromDocument(doc, selectedOcrLang) { result ->
                 extractedText = result
             }
         }
@@ -103,6 +113,16 @@ fun OcrTextScreen(
         ),
         label = "laser_anim"
     )
+
+    if (showManageLanguagesDialog) {
+        ManageOcrLanguagesDialog(
+            viewModel = viewModel,
+            onDismiss = {
+                showManageLanguagesDialog = false
+                viewModel.refreshInstalledOcrLanguages()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -317,12 +337,134 @@ fun OcrTextScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(3.dp))
+                            val wordCount = extractedText.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size
                             Text(
-                                text = "${extractedText.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size} words detected on device",
+                                text = "$wordCount words detected on device (Tesseract offline)",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+            }
+
+            // Language Selector Row
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isProcessing) { showLanguagePickerMenu = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .testTag("ocr_language_selector_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Language,
+                                contentDescription = null,
+                                tint = ScanProGreenContainer,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val displayLang = when (selectedOcrLang) {
+                                "eng+ben" -> "English + Bengali (eng+ben)"
+                                "eng" -> "English (eng)"
+                                "ben" -> "Bengali (ben)"
+                                else -> OcrEngine.AVAILABLE_LANGUAGES.find { it.code == selectedOcrLang }?.name ?: selectedOcrLang
+                            }
+                            Text(
+                                text = displayLang,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showLanguagePickerMenu,
+                            onDismissRequest = { showLanguagePickerMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("English + Bengali (Default)") },
+                                onClick = {
+                                    viewModel.setOcrLanguage("eng+ben")
+                                    showLanguagePickerMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("English (eng)") },
+                                onClick = {
+                                    viewModel.setOcrLanguage("eng")
+                                    showLanguagePickerMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Bengali (বাংলা - ben)") },
+                                onClick = {
+                                    viewModel.setOcrLanguage("ben")
+                                    showLanguagePickerMenu = false
+                                }
+                            )
+                            // Other installed languages
+                            val extraInstalled = installedLangs.filter { it != "eng" && it != "ben" }
+                            if (extraInstalled.isNotEmpty()) {
+                                HorizontalDivider()
+                                extraInstalled.forEach { code ->
+                                    val lang = OcrEngine.AVAILABLE_LANGUAGES.find { it.code == code }
+                                    DropdownMenuItem(
+                                        text = { Text(lang?.name ?: code) },
+                                        onClick = {
+                                            viewModel.setOcrLanguage(code)
+                                            showLanguagePickerMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = ScanProGreenContainer, modifier = Modifier.size(18.dp))
+                                },
+                                text = { Text("Manage OCR Languages...", color = ScanProGreenContainer, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showLanguagePickerMenu = false
+                                    showManageLanguagesDialog = true
+                                }
+                            )
+                        }
+                    }
+
+                    // Re-run button
+                    FilledTonalButton(
+                        onClick = {
+                            viewModel.extractTextFromDocument(doc, selectedOcrLang) { result ->
+                                extractedText = result
+                            }
+                        },
+                        enabled = !isProcessing,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.testTag("ocr_rerun_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Re-run OCR",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Re-run", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -333,7 +475,8 @@ fun OcrTextScreen(
             OutlinedTextField(
                 value = extractedText,
                 onValueChange = { extractedText = it },
-                label = { Text(if (isProcessing) "Extracting..." else "Extracted Text") },
+                label = { Text(if (isProcessing) "Extracting text..." else "Extracted Text (Editable)") },
+                placeholder = { Text("No text detected yet. Tap 'Re-run' or edit text manually here.") },
                 enabled = !isProcessing,
                 textStyle = LocalTextStyle.current.copy(
                     fontFamily = FontFamily.Monospace,

@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 class ScanProViewModel(application: Application) : AndroidViewModel(application) {
@@ -143,6 +145,49 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             )
         } catch (_: Exception) {}
         showToast("Language set to $langName")
+    }
+
+    // OCR Multi-Language Support
+    private val _ocrLanguage = MutableStateFlow(prefs.getString("pref_ocr_language", OcrEngine.DEFAULT_OCR_LANG) ?: OcrEngine.DEFAULT_OCR_LANG)
+    val ocrLanguage: StateFlow<String> = _ocrLanguage.asStateFlow()
+
+    private val _installedOcrLanguages = MutableStateFlow<List<String>>(emptyList())
+    val installedOcrLanguages: StateFlow<List<String>> = _installedOcrLanguages.asStateFlow()
+
+    private val _ocrDownloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val ocrDownloadProgress: StateFlow<Map<String, Float>> = _ocrDownloadProgress.asStateFlow()
+
+    fun refreshInstalledOcrLanguages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val installed = ocrEngine.getInstalledLanguageCodes()
+            _installedOcrLanguages.value = installed
+        }
+    }
+
+    fun setOcrLanguage(langCode: String) {
+        _ocrLanguage.value = langCode
+        prefs.edit().putString("pref_ocr_language", langCode).apply()
+    }
+
+    fun downloadOcrLanguage(code: String, onComplete: ((Boolean) -> Unit)? = null) {
+        if (_ocrDownloadProgress.value.containsKey(code)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _ocrDownloadProgress.update { it + (code to 0.01f) }
+            val success = ocrEngine.downloadLanguage(code) { progress ->
+                _ocrDownloadProgress.update { it + (code to progress) }
+            }
+            _ocrDownloadProgress.update { it - code }
+            refreshInstalledOcrLanguages()
+            withContext(Dispatchers.Main) {
+                if (success) {
+                    val langName = OcrEngine.AVAILABLE_LANGUAGES.find { it.code == code }?.name ?: code
+                    showToast("$langName downloaded. Available offline!")
+                } else {
+                    showToast("Download failed for $code")
+                }
+                onComplete?.invoke(success)
+            }
+        }
     }
 
     private val _toastMessage = MutableStateFlow<String?>(null)
@@ -411,8 +456,8 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun ensurePdfFileInternal(doc: DocumentItem): File = withContext(Dispatchers.IO) {
-        // If doc is a JPG image, convert it to a real single-page PDF and cache it
-        if (doc.format == DocFormat.JPG) {
+        // If doc is a JPG or PNG image, convert it to a real single-page PDF and cache it
+        if (doc.format == DocFormat.JPG || doc.format == DocFormat.PNG) {
             val convertedFile = File(documentsDir, "${doc.id}_converted.pdf")
             if (convertedFile.exists() && convertedFile.length() > 0L) {
                 return@withContext convertedFile
@@ -466,7 +511,10 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun finishScanAndSave(onComplete: ((DocumentItem) -> Unit)? = null) {
+    fun finishScanAndSave(
+        format: DocFormat = DocFormat.PDF,
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
         if (_isProcessing.value) return
         val pages = _activeDraftPages.value
         if (pages.isEmpty()) {
@@ -478,20 +526,47 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val firstPage = pages.firstOrNull()
                 val docId = "doc-${System.currentTimeMillis()}"
-                val title = "Scan_${System.currentTimeMillis() % 10000}.pdf"
-                val outputFile = File(documentsDir, "$docId.pdf")
 
                 val (qualityVal, maxDim) = when {
                     _defaultQuality.value.contains("Low", true) -> Pair(0.70f, 1200)
                     _defaultQuality.value.contains("Medium", true) -> Pair(0.85f, 1800)
                     else -> Pair(0.95f, 2400)
                 }
+                val qualityInt = (qualityVal * 100).toInt().coerceIn(10, 100)
 
-                val generatedFile = pdfEngine.createPdfFromPages(pages, outputFile, qualityVal, maxDim)
+                val generatedFile: File
+                val title: String
+                val mimeType: String
+
+                if (format == DocFormat.JPG || format == DocFormat.PNG) {
+                    val pageToSave = firstPage ?: pages.first()
+                    val bitmap = pdfEngine.loadPageBitmap(pageToSave)
+                        ?: throw IllegalStateException("Could not load scanned image")
+
+                    val ext = if (format == DocFormat.PNG) "png" else "jpg"
+                    mimeType = if (format == DocFormat.PNG) "image/png" else "image/jpeg"
+                    title = "Scan_${System.currentTimeMillis() % 10000}.$ext"
+                    generatedFile = File(documentsDir, "$docId.$ext")
+
+                    FileOutputStream(generatedFile).use { out ->
+                        if (format == DocFormat.PNG) {
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        } else {
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, qualityInt, out)
+                        }
+                    }
+                    bitmap.recycle()
+                } else {
+                    title = "Scan_${System.currentTimeMillis() % 10000}.pdf"
+                    mimeType = "application/pdf"
+                    val outputFile = File(documentsDir, "$docId.pdf")
+                    generatedFile = pdfEngine.createPdfFromPages(pages, outputFile, qualityVal, maxDim)
+                }
+
                 val realSize = PdfEngine.formatFileSize(generatedFile.length())
-                
+
                 // Export to user-chosen public storage (Documents/ScanPro or SAF custom folder)
-                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title)
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title, mimeType)
                 val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$title"
 
                 val newDoc = DocumentItem(
@@ -499,11 +574,11 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                     title = title,
                     date = "Today",
                     time = "Just now",
-                    pageCount = pages.size,
-                    format = DocFormat.PDF,
+                    pageCount = if (format == DocFormat.PDF) pages.size else 1,
+                    format = format,
                     fileSize = realSize,
                     thumbnailRes = firstPage?.drawableRes ?: 0,
-                    thumbnailUri = firstPage?.imageUri,
+                    thumbnailUri = if (format == DocFormat.JPG || format == DocFormat.PNG) Uri.fromFile(generatedFile).toString() else firstPage?.imageUri,
                     category = DocCategory.TODAY,
                     pages = pages,
                     ocrText = "",
@@ -1067,14 +1142,19 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun extractTextFromDocument(doc: DocumentItem, onComplete: ((String) -> Unit)? = null) {
+    fun extractTextFromDocument(
+        doc: DocumentItem,
+        language: String? = null,
+        onComplete: ((String) -> Unit)? = null
+    ) {
         if (_isProcessing.value) return
+        val effectiveLang = language ?: _ocrLanguage.value
         viewModelScope.launch(Dispatchers.IO) {
             _isProcessing.value = true
             _ocrProgress.value = 0f
             try {
                 val sourceFile = ensurePdfFileInternal(doc)
-                val extractedText = ocrEngine.extractTextFromPdf(sourceFile) { progress ->
+                val extractedText = ocrEngine.extractTextFromPdf(sourceFile, effectiveLang) { progress ->
                     _ocrProgress.value = progress
                 }
 
