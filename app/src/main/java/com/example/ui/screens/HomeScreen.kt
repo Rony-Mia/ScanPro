@@ -11,11 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Compress
-import androidx.compose.material.icons.outlined.DocumentScanner
-import androidx.compose.material.icons.outlined.MergeType
-import androidx.compose.material.icons.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.UploadFile
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
 import com.example.model.DocumentItem
+import com.example.model.ToolType
 import com.example.ui.components.DocCard
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProGreenContainer
@@ -47,9 +44,11 @@ fun HomeScreen(
     onNavigateToCompress: () -> Unit,
     onNavigateToOcr: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToTool: ((ToolType) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val documents by viewModel.documents.collectAsState()
+    val quickActions by viewModel.homeQuickActions.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val launchScannerFlow = rememberDocumentScannerLauncher(viewModel = viewModel) { uris ->
@@ -149,36 +148,32 @@ fun HomeScreen(
                 }
             }
 
-            // Quick Actions 4-Grid
+            // Dynamic Configurable Quick Actions
             item {
+                val actions = quickActions.ifEmpty {
+                    listOf(ToolType.MERGE, ToolType.COMPRESS, ToolType.SCAN, ToolType.OCR)
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    QuickActionItem(
-                        icon = Icons.Outlined.MergeType,
-                        label = "Merge PDF",
-                        onClick = onNavigateToMerge,
-                        testTag = "quick_merge"
-                    )
-                    QuickActionItem(
-                        icon = Icons.Outlined.Compress,
-                        label = "Compress",
-                        onClick = onNavigateToCompress,
-                        testTag = "quick_compress"
-                    )
-                    QuickActionItem(
-                        icon = Icons.Outlined.UploadFile,
-                        label = "Import File",
-                        onClick = launchScannerFlow,
-                        testTag = "quick_import"
-                    )
-                    QuickActionItem(
-                        icon = Icons.Outlined.DocumentScanner,
-                        label = "OCR Text",
-                        onClick = onNavigateToOcr,
-                        testTag = "quick_ocr"
-                    )
+                    actions.take(4).forEach { tool ->
+                        val clickHandler: () -> Unit = {
+                            when (tool) {
+                                ToolType.SCAN -> launchScannerFlow()
+                                ToolType.MERGE -> onNavigateToMerge()
+                                ToolType.COMPRESS -> onNavigateToCompress()
+                                ToolType.OCR -> onNavigateToOcr()
+                                else -> onNavigateToTool?.invoke(tool) ?: Unit
+                            }
+                        }
+                        QuickActionItem(
+                            icon = getToolIcon(tool),
+                            label = getToolShortLabel(tool),
+                            onClick = clickHandler,
+                            testTag = "quick_${tool.name.lowercase()}"
+                        )
+                    }
                 }
             }
 
@@ -263,7 +258,8 @@ fun HomeScreen(
                         onClick = { onNavigateToViewer(doc) },
                         onDelete = { viewModel.deleteDocument(doc.id) },
                         onRename = { newName -> viewModel.renameDocument(doc.id, newName) },
-                        onShare = { ShareUtil.shareDocument(context, doc) }
+                        onShare = { ShareUtil.shareDocument(context, doc) },
+                        onMakeSearchable = { viewModel.makeDocumentSearchable(doc) }
                     )
                 }
             }
@@ -315,3 +311,46 @@ private fun QuickActionItem(
         )
     }
 }
+
+private fun getToolIcon(tool: ToolType): androidx.compose.ui.graphics.vector.ImageVector = when (tool) {
+    ToolType.SCAN -> Icons.Outlined.DocumentScanner
+    ToolType.ID_CARD -> Icons.Outlined.Badge
+    ToolType.BUSINESS_CARD -> Icons.Outlined.ContactPage
+    ToolType.WHITEBOARD -> Icons.Outlined.CoPresent
+    ToolType.QR_BARCODE -> Icons.Outlined.QrCodeScanner
+    ToolType.OCR -> Icons.Outlined.TextSnippet
+    ToolType.MERGE -> Icons.Outlined.MergeType
+    ToolType.SPLIT -> Icons.Outlined.Splitscreen
+    ToolType.COMPRESS -> Icons.Outlined.Compress
+    ToolType.PDF_TO_WORD -> Icons.Outlined.Article
+    ToolType.IMAGE_TO_PDF -> Icons.Outlined.Image
+    ToolType.IMAGE_MERGER -> Icons.Outlined.AutoAwesomeMosaic
+    ToolType.PDF_TO_IMAGE -> Icons.Outlined.PictureAsPdf
+    ToolType.WATERMARK -> Icons.Outlined.WaterDrop
+    ToolType.ROTATE -> Icons.Outlined.RotateRight
+    ToolType.DELETE_PAGES -> Icons.Outlined.Delete
+    ToolType.PASSWORD -> Icons.Outlined.Lock
+    ToolType.SIGN -> Icons.Outlined.Draw
+}
+
+private fun getToolShortLabel(tool: ToolType): String = when (tool) {
+    ToolType.SCAN -> "Scan"
+    ToolType.ID_CARD -> "ID Card"
+    ToolType.BUSINESS_CARD -> "Card"
+    ToolType.WHITEBOARD -> "Board"
+    ToolType.QR_BARCODE -> "QR / Code"
+    ToolType.OCR -> "OCR Text"
+    ToolType.MERGE -> "Merge"
+    ToolType.SPLIT -> "Split"
+    ToolType.COMPRESS -> "Compress"
+    ToolType.PDF_TO_WORD -> "To Word"
+    ToolType.IMAGE_TO_PDF -> "Img to PDF"
+    ToolType.IMAGE_MERGER -> "Img Merger"
+    ToolType.PDF_TO_IMAGE -> "To Image"
+    ToolType.WATERMARK -> "Watermark"
+    ToolType.ROTATE -> "Rotate"
+    ToolType.DELETE_PAGES -> "Del Pages"
+    ToolType.PASSWORD -> "Protect"
+    ToolType.SIGN -> "Sign"
+}
+

@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ScanProViewModel
+import com.example.model.ToolType
 import com.example.ui.components.ScanLineDivider
 import com.example.ui.theme.ScanProAccentRed
 import com.example.ui.theme.ScanProGreenContainer
@@ -44,6 +45,8 @@ fun SettingsScreen(
     val defaultSaveLocation by viewModel.defaultSaveLocation.collectAsState()
     val defaultQuality by viewModel.defaultQuality.collectAsState()
     val language by viewModel.language.collectAsState()
+    val searchablePdfEnabled by viewModel.searchablePdfEnabled.collectAsState()
+    val homeQuickActions by viewModel.homeQuickActions.collectAsState()
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -56,6 +59,7 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showOcrLanguagesDialog by remember { mutableStateOf(false) }
+    var showHomeQuickActionsDialog by remember { mutableStateOf(false) }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -140,10 +144,31 @@ fun SettingsScreen(
                 )
             }
 
+            item {
+                SettingsClickableRow(
+                    icon = Icons.Outlined.DashboardCustomize,
+                    title = "Customize Home Quick Actions",
+                    subtitle = "${homeQuickActions.size} tools configured on Home screen",
+                    onClick = { showHomeQuickActionsDialog = true },
+                    testTag = "settings_customize_quick_actions_row"
+                )
+            }
+
             // Scanning & Image Quality Section
             item {
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsSectionHeader("SCANNING & QUALITY")
+            }
+
+            item {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Search,
+                    title = "Searchable PDF",
+                    subtitle = "Embed OCR text layer so text in generated PDFs can be selected and searched",
+                    checked = searchablePdfEnabled,
+                    onCheckedChange = { viewModel.toggleSearchablePdf(it) },
+                    testTag = "settings_searchable_pdf_switch"
+                )
             }
 
             item {
@@ -552,6 +577,100 @@ fun SettingsScreen(
         com.example.ui.components.ManageOcrLanguagesDialog(
             viewModel = viewModel,
             onDismiss = { showOcrLanguagesDialog = false }
+        )
+    }
+
+    if (showHomeQuickActionsDialog) {
+        var tempActions by remember(homeQuickActions) { mutableStateOf(homeQuickActions.toSet()) }
+        AlertDialog(
+            onDismissRequest = { showHomeQuickActionsDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.DashboardCustomize, contentDescription = null, tint = ScanProGreenContainer)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Home Quick Actions")
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Choose up to 4 quick action shortcuts to show on your Home screen dashboard:",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 340.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(ToolType.values().size) { idx ->
+                            val tool = ToolType.values()[idx]
+                            val isChecked = tempActions.contains(tool)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isChecked) ScanProGreenContainer.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = if (isChecked) 1.5.dp else 1.dp,
+                                    color = if (isChecked) ScanProGreenContainer else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        tempActions = if (isChecked) {
+                                            if (tempActions.size > 1) tempActions - tool else tempActions
+                                        } else {
+                                            if (tempActions.size < 4) tempActions + tool else tempActions
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = tool.title,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isChecked) ScanProGreenContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { checked ->
+                                            tempActions = if (checked) {
+                                                if (tempActions.size < 4) tempActions + tool else tempActions
+                                            } else {
+                                                if (tempActions.size > 1) tempActions - tool else tempActions
+                                            }
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = ScanProGreenContainer)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setHomeQuickActions(tempActions.toList())
+                        showHomeQuickActionsDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ScanProGreenContainer)
+                ) {
+                    Text("Apply (${tempActions.size}/4)", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showHomeQuickActionsDialog = false }) {
+                    Text("Cancel", color = ScanProGreenContainer)
+                }
+            }
         )
     }
 

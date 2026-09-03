@@ -545,7 +545,8 @@ fun DocumentsLibraryScreen(
                                 onClick = { onNavigateToViewer(doc) },
                                 onDelete = { viewModel.deleteDocument(doc.id) },
                                 onRename = { newName -> viewModel.renameDocument(doc.id, newName) },
-                                onShare = { ShareUtil.shareDocument(context, doc) }
+                                onShare = { ShareUtil.shareDocument(context, doc) },
+                                onMakeSearchable = { viewModel.makeDocumentSearchable(doc) }
                             )
                         }
                     }
@@ -570,7 +571,8 @@ fun DocumentsLibraryScreen(
                                 onClick = { onNavigateToViewer(doc) },
                                 onDelete = { viewModel.deleteDocument(doc.id) },
                                 onRename = { newName -> viewModel.renameDocument(doc.id, newName) },
-                                onShare = { ShareUtil.shareDocument(context, doc) }
+                                onShare = { ShareUtil.shareDocument(context, doc) },
+                                onMakeSearchable = { viewModel.makeDocumentSearchable(doc) }
                             )
                         }
                     }
@@ -595,7 +597,8 @@ fun DocumentsLibraryScreen(
                                 onClick = { onNavigateToViewer(doc) },
                                 onDelete = { viewModel.deleteDocument(doc.id) },
                                 onRename = { newName -> viewModel.renameDocument(doc.id, newName) },
-                                onShare = { ShareUtil.shareDocument(context, doc) }
+                                onShare = { ShareUtil.shareDocument(context, doc) },
+                                onMakeSearchable = { viewModel.makeDocumentSearchable(doc) }
                             )
                         }
                     }

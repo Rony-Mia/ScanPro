@@ -30,6 +30,17 @@ data class OcrLanguage(
 )
 
 /**
+ * Word-level OCR result with normalized bounding box (0f..1f relative to page dimensions).
+ */
+data class OcrWord(
+    val text: String,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
+
+/**
  * High-performance, offline-capable multi-language OCR engine using Tesseract4Android.
  * Bundles English and Bengali for immediate offline use, and supports downloading additional
  * high-accuracy language models on demand.
@@ -286,6 +297,89 @@ class OcrEngine(private val context: Context) {
             } catch (_: Exception) {}
         }
     }
+
+    /**
+     * Extracts word-level bounding boxes and text from a single bitmap.
+     * Uses Tesseract's ResultIterator at PageIteratorLevel.RIL_WORD to extract exact
+     * normalized bounding rectangles (0f..1f relative to page dimensions) for searchable PDF generation.
+     */
+    suspend fun detectWords(
+        bitmap: Bitmap,
+        language: String = DEFAULT_OCR_LANG
+    ): List<OcrWord> = withContext(Dispatchers.IO) {
+        ensureTessdataInitialized()
+
+        val requestedLangs = language.split("+").filter { it.isNotBlank() }
+        val availableLangs = requestedLangs.filter { isLanguageAvailable(it) }
+        val effectiveLang = if (availableLangs.isNotEmpty()) availableLangs.joinToString("+") else "eng"
+
+        val tess = TessBaseAPI()
+        var pix: Pix? = null
+        val words = mutableListOf<OcrWord>()
+
+        try {
+            val initialized = tess.init(baseDir.absolutePath, effectiveLang)
+            if (!initialized) {
+                Log.e(TAG, "Failed to initialize TessBaseAPI for words detection")
+                return@withContext emptyList()
+            }
+
+            // Feed original bitmap dimensions to preserve coordinate mapping 1:1 with visible page
+            pix = ReadFile.readBitmap(bitmap)
+            val imgW = bitmap.width.toFloat().coerceAtLeast(1f)
+            val imgH = bitmap.height.toFloat().coerceAtLeast(1f)
+
+            tess.setImage(pix)
+            // Calling getUTF8Text first triggers the OCR recognition engine pass so ResultIterator is populated
+            tess.utF8Text
+
+            val iterator = tess.resultIterator
+            if (iterator != null) {
+                try {
+                    iterator.begin()
+                    val wordLevel = TessBaseAPI.PageIteratorLevel.RIL_WORD
+                    do {
+                        val wordText = iterator.getUTF8Text(wordLevel)?.trim()
+                        val rect = iterator.getBoundingRect(wordLevel)
+                        if (!wordText.isNullOrBlank() && rect != null) {
+                            val leftNorm = (rect.left / imgW).coerceIn(0f, 1f)
+                            val topNorm = (rect.top / imgH).coerceIn(0f, 1f)
+                            val rightNorm = (rect.right / imgW).coerceIn(0f, 1f)
+                            val bottomNorm = (rect.bottom / imgH).coerceIn(0f, 1f)
+
+                            if (rightNorm > leftNorm && bottomNorm > topNorm) {
+                                words.add(
+                                    OcrWord(
+                                        text = wordText,
+                                        left = leftNorm,
+                                        top = topNorm,
+                                        right = rightNorm,
+                                        bottom = bottomNorm
+                                    )
+                                )
+                            }
+                        }
+                    } while (iterator.next(wordLevel))
+                } finally {
+                    iterator.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during word-level OCR detection", e)
+        } finally {
+            try { pix?.recycle() } catch (_: Exception) {}
+            try { tess.recycle() } catch (_: Exception) {}
+        }
+        words
+    }
+
+    /**
+     * Alias for [detectWords] matching getWordsWithBounds naming.
+     */
+    suspend fun getWordsWithBounds(
+        bitmap: Bitmap,
+        language: String = DEFAULT_OCR_LANG
+    ): List<OcrWord> = detectWords(bitmap, language)
 
     /**
      * Extracts text from every page of a PDF file, reporting progress (0f..1f) as it goes.

@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.data.ScanProViewModel
+import com.example.model.ToolType
 import com.example.ui.components.BottomTab
 import com.example.ui.components.ScanProBottomBar
 import com.example.ui.screens.*
@@ -36,6 +37,8 @@ object ScanProRoutes {
     const val DELETE_PAGES = "delete_pages"
     const val SIGN = "sign"
     const val ID_CARD = "id_card"
+    const val BUSINESS_CARD = "business_card"
+    const val WHITEBOARD = "whiteboard"
     const val QR_BARCODE = "qr_barcode"
     const val PDF_TO_WORD = "pdf_to_word"
 }
@@ -96,6 +99,28 @@ fun ScanProNavGraph(
                 ) {
                     when (currentBottomTab) {
                         BottomTab.HOME -> {
+                            val navigateToTool: (ToolType) -> Unit = { tool ->
+                                when (tool) {
+                                    ToolType.SCAN -> navController.navigate(ScanProRoutes.SCAN_REVIEW)
+                                    ToolType.ID_CARD -> navController.navigate(ScanProRoutes.ID_CARD)
+                                    ToolType.BUSINESS_CARD -> navController.navigate(ScanProRoutes.BUSINESS_CARD)
+                                    ToolType.WHITEBOARD -> navController.navigate(ScanProRoutes.WHITEBOARD)
+                                    ToolType.QR_BARCODE -> navController.navigate(ScanProRoutes.QR_BARCODE)
+                                    ToolType.OCR -> navController.navigate(ScanProRoutes.OCR)
+                                    ToolType.MERGE -> navController.navigate(ScanProRoutes.MERGE)
+                                    ToolType.SPLIT -> navController.navigate(ScanProRoutes.SPLIT)
+                                    ToolType.COMPRESS -> navController.navigate(ScanProRoutes.COMPRESS)
+                                    ToolType.PDF_TO_WORD -> navController.navigate(ScanProRoutes.PDF_TO_WORD)
+                                    ToolType.IMAGE_TO_PDF -> navController.navigate(ScanProRoutes.IMAGE_TO_PDF)
+                                    ToolType.IMAGE_MERGER -> navController.navigate(ScanProRoutes.IMAGE_MERGER)
+                                    ToolType.PDF_TO_IMAGE -> navController.navigate(ScanProRoutes.PDF_TO_IMAGE)
+                                    ToolType.WATERMARK -> navController.navigate(ScanProRoutes.WATERMARK)
+                                    ToolType.ROTATE -> navController.navigate(ScanProRoutes.ROTATE)
+                                    ToolType.DELETE_PAGES -> navController.navigate(ScanProRoutes.DELETE_PAGES)
+                                    ToolType.PASSWORD -> navController.navigate(ScanProRoutes.PASSWORD)
+                                    ToolType.SIGN -> navController.navigate(ScanProRoutes.SIGN)
+                                }
+                            }
                             HomeScreen(
                                 viewModel = viewModel,
                                 onNavigateToScan = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
@@ -107,7 +132,8 @@ fun ScanProNavGraph(
                                 onNavigateToMerge = { navController.navigate(ScanProRoutes.MERGE) },
                                 onNavigateToCompress = { navController.navigate(ScanProRoutes.COMPRESS) },
                                 onNavigateToOcr = { navController.navigate(ScanProRoutes.OCR) },
-                                onNavigateToSettings = { currentBottomTab = BottomTab.SETTINGS }
+                                onNavigateToSettings = { currentBottomTab = BottomTab.SETTINGS },
+                                onNavigateToTool = navigateToTool
                             )
                         }
 
@@ -127,6 +153,8 @@ fun ScanProNavGraph(
                                 viewModel = viewModel,
                                 onNavigateToScanReview = { navController.navigate(ScanProRoutes.SCAN_REVIEW) },
                                 onNavigateToIdCard = { navController.navigate(ScanProRoutes.ID_CARD) },
+                                onNavigateToBusinessCard = { navController.navigate(ScanProRoutes.BUSINESS_CARD) },
+                                onNavigateToWhiteboard = { navController.navigate(ScanProRoutes.WHITEBOARD) },
                                 onNavigateToQrBarcode = { navController.navigate(ScanProRoutes.QR_BARCODE) },
                                 onNavigateToOcr = { navController.navigate(ScanProRoutes.OCR) },
                                 onNavigateToMerge = { navController.navigate(ScanProRoutes.MERGE) },
@@ -389,6 +417,34 @@ fun ScanProNavGraph(
                 onBack = { navController.popBackStack() },
                 onConverted = { _ ->
                     // Keep on screen to allow viewing result details, sharing or opening the converted Word file
+                }
+            )
+        }
+
+        // 19. Business Card Scanner Screen
+        composable(ScanProRoutes.BUSINESS_CARD) {
+            BusinessCardScannerScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onDone = { cardDoc ->
+                    viewModel.selectDocument(cardDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
+                }
+            )
+        }
+
+        // 20. Whiteboard / Blackboard Scanner Screen
+        composable(ScanProRoutes.WHITEBOARD) {
+            WhiteboardScanScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onDone = { wbDoc ->
+                    viewModel.selectDocument(wbDoc)
+                    navController.navigate(ScanProRoutes.PDF_VIEWER) {
+                        popUpTo(ScanProRoutes.MAIN)
+                    }
                 }
             )
         }

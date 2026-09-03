@@ -27,6 +27,7 @@ import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import com.tom_roush.pdfbox.util.Matrix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -582,6 +583,79 @@ class PdfEngine(private val context: Context) {
     }
 
     /**
+     * Generates a searchable PDF from scanned pages with an invisible OCR text layer.
+     * Draws the visible scanned image, runs OCR word detection on that bitmap, and embeds
+     * invisible text (RenderingMode.NEITHER) positioned precisely over the detected words
+     * so that the resulting PDF is fully searchable and text-selectable in any PDF viewer.
+     */
+    suspend fun createSearchablePdf(
+        pages: List<ScannedPage>,
+        outputFile: File,
+        ocrEngine: OcrEngine,
+        jpegQuality: Float = 0.90f,
+        maxDimension: Int = 2400
+    ): File = withContext(Dispatchers.IO) {
+        outputFile.parentFile?.mkdirs()
+        val doc = PDDocument()
+
+        try {
+            for (page in pages) {
+                val rawBitmap = loadPageBitmap(page) ?: continue
+                val bitmap = scaleBitmapDown(rawBitmap, maxDimension)
+                try {
+                    val pageWidth = bitmap.width.toFloat()
+                    val pageHeight = bitmap.height.toFloat()
+                    val pageRect = PDRectangle(pageWidth, pageHeight)
+                    val pdPage = PDPage(pageRect)
+                    doc.addPage(pdPage)
+
+                    // 1. Draw the visible page image
+                    val pdImage = JPEGFactory.createFromImage(doc, bitmap, jpegQuality)
+                    val contentStream = PDPageContentStream(doc, pdPage)
+                    contentStream.drawImage(pdImage, 0f, 0f, pageWidth, pageHeight)
+
+                    // 2. Detect words and render invisible text layer over the image
+                    val words = ocrEngine.detectWords(bitmap)
+                    if (words.isNotEmpty()) {
+                        contentStream.beginText()
+                        contentStream.setRenderingMode(RenderingMode.NEITHER)
+                        for (word in words) {
+                            val sanitized = word.text.filter { c -> c.code in 32..126 }
+                            if (sanitized.isBlank()) continue
+
+                            val wordX = (word.left * pageWidth).coerceIn(0f, pageWidth)
+                            val wordW = ((word.right - word.left) * pageWidth).coerceAtLeast(1f)
+                            val wordH = ((word.bottom - word.top) * pageHeight).coerceAtLeast(1f)
+                            val wordY = (pageHeight - (word.bottom * pageHeight)).coerceIn(0f, pageHeight)
+                            val fontSize = (wordH * 0.85f).coerceIn(4f, 120f)
+
+                            try {
+                                contentStream.setFont(PDType1Font.HELVETICA, fontSize)
+                                contentStream.setTextMatrix(Matrix.getTranslateInstance(wordX, wordY))
+                                contentStream.showText(sanitized)
+                            } catch (_: Exception) {
+                                // Ignore words with unencodable characters
+                            }
+                        }
+                        contentStream.endText()
+                    }
+
+                    contentStream.close()
+                } finally {
+                    if (bitmap !== rawBitmap) {
+                        bitmap.recycle()
+                    }
+                    rawBitmap.recycle()
+                }
+            }
+            doc.save(outputFile)
+        } finally {
+            doc.close()
+        }
+        outputFile
+    }
+
+    /**
      * Composites front and back scans of an ID card onto a single A4 page for standard printing.
      */
     suspend fun createIdCardPdf(
@@ -789,6 +863,23 @@ class PdfEngine(private val context: Context) {
             }
             com.example.model.PageFilter.COLOR -> {
                 cm.setSaturation(1.15f)
+            }
+            com.example.model.PageFilter.WHITEBOARD -> {
+                val contrast = 1.45f
+                val translate = (-0.12f * 255f) * contrast
+                val array = floatArrayOf(
+                    contrast, 0f, 0f, 0f, translate,
+                    0f, contrast, 0f, 0f, translate,
+                    0f, 0f, contrast, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f
+                )
+                cm.set(array)
+                val satMatrix = android.graphics.ColorMatrix()
+                satMatrix.setSaturation(1.5f)
+                cm.postConcat(satMatrix)
+            }
+            com.example.model.PageFilter.ENHANCED -> {
+                return com.example.util.ImageEnhancer.enhancePage(bitmap)
             }
             com.example.model.PageFilter.ORIGINAL -> return bitmap
         }

@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -168,6 +172,49 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     fun setOcrLanguage(langCode: String) {
         _ocrLanguage.value = langCode
         prefs.edit().putString("pref_ocr_language", langCode).apply()
+    }
+
+    // Searchable PDF setting
+    private val _searchablePdfEnabled = MutableStateFlow(prefs.getBoolean("pref_searchable_pdf", true))
+    val searchablePdfEnabled: StateFlow<Boolean> = _searchablePdfEnabled.asStateFlow()
+
+    fun toggleSearchablePdf(enabled: Boolean) {
+        _searchablePdfEnabled.value = enabled
+        prefs.edit().putBoolean("pref_searchable_pdf", enabled).apply()
+        showToast(if (enabled) "Searchable PDF enabled" else "Searchable PDF disabled")
+    }
+
+    // Home Screen Configurable Quick Actions
+    private fun loadSavedHomeQuickActions(): List<ToolType> {
+        val saved = prefs.getString("pref_home_quick_actions", null) ?: return listOf(
+            ToolType.MERGE,
+            ToolType.COMPRESS,
+            ToolType.SCAN,
+            ToolType.OCR
+        )
+        val loaded = saved.split(",").mapNotNull { name ->
+            try {
+                ToolType.valueOf(name.trim())
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return if (loaded.isNotEmpty()) loaded else listOf(
+            ToolType.MERGE,
+            ToolType.COMPRESS,
+            ToolType.SCAN,
+            ToolType.OCR
+        )
+    }
+
+    private val _homeQuickActions = MutableStateFlow<List<ToolType>>(loadSavedHomeQuickActions())
+    val homeQuickActions: StateFlow<List<ToolType>> = _homeQuickActions.asStateFlow()
+
+    fun setHomeQuickActions(actions: List<ToolType>) {
+        val limited = actions.take(6)
+        _homeQuickActions.value = limited
+        prefs.edit().putString("pref_home_quick_actions", limited.joinToString(",") { it.name }).apply()
+        showToast("Home shortcuts updated")
     }
 
     fun downloadOcrLanguage(code: String, onComplete: ((Boolean) -> Unit)? = null) {
@@ -561,7 +608,11 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                     title = "Scan_${System.currentTimeMillis() % 10000}.pdf"
                     mimeType = "application/pdf"
                     val outputFile = File(documentsDir, "$docId.pdf")
-                    generatedFile = pdfEngine.createPdfFromPages(pages, outputFile, qualityVal, maxDim)
+                    generatedFile = if (_searchablePdfEnabled.value) {
+                        pdfEngine.createSearchablePdf(pages, outputFile, ocrEngine, qualityVal, maxDim)
+                    } else {
+                        pdfEngine.createPdfFromPages(pages, outputFile, qualityVal, maxDim)
+                    }
                 }
 
                 val realSize = PdfEngine.formatFileSize(generatedFile.length())
@@ -594,6 +645,211 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showToast("Failed to save document: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /**
+     * Converts an existing PDF document into a searchable PDF by extracting or rendering its pages,
+     * running OCR word detection, and writing a new PDF with an invisible text layer.
+     */
+    fun makeDocumentSearchable(doc: DocumentItem, onComplete: ((DocumentItem) -> Unit)? = null) {
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val sourceFile = if (!doc.filePath.isNullOrEmpty() && File(doc.filePath).exists()) {
+                    File(doc.filePath)
+                } else {
+                    ensurePdfFileInternal(doc)
+                }
+
+                val docId = "searchable-${System.currentTimeMillis()}"
+                val outputFile = File(documentsDir, "$docId.pdf")
+
+                val finalFile: File = if (doc.pages.isNotEmpty()) {
+                    pdfEngine.createSearchablePdf(doc.pages, outputFile, ocrEngine)
+                } else {
+                    val tempPages = mutableListOf<ScannedPage>()
+                    val pfd = ParcelFileDescriptor.open(sourceFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val renderer = PdfRenderer(pfd)
+                    val count = renderer.pageCount
+                    try {
+                        for (i in 0 until count) {
+                            val page = renderer.openPage(i)
+                            val w = (page.width * 2).coerceAtLeast(800)
+                            val h = (page.height * 2).coerceAtLeast(1100)
+                            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bmp)
+                            canvas.drawColor(Color.WHITE)
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            page.close()
+
+                            val pageFile = File(getApplication<Application>().cacheDir, "temp_searchable_${doc.id}_$i.jpg")
+                            FileOutputStream(pageFile).use { out ->
+                                bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                            }
+                            bmp.recycle()
+                            tempPages.add(
+                                ScannedPage(
+                                    id = "p-$i",
+                                    pageNumber = i + 1,
+                                    imageUri = Uri.fromFile(pageFile).toString()
+                                )
+                            )
+                        }
+                    } finally {
+                        renderer.close()
+                        pfd.close()
+                    }
+                    val result = pdfEngine.createSearchablePdf(tempPages, outputFile, ocrEngine)
+                    for (p in tempPages) {
+                        p.imageUri?.let { uriStr ->
+                            try { File(Uri.parse(uriStr).path ?: "").delete() } catch (_: Exception) {}
+                        }
+                    }
+                    result
+                }
+
+                val realSize = PdfEngine.formatFileSize(finalFile.length())
+                val updatedDoc = doc.copy(
+                    filePath = finalFile.absolutePath,
+                    fileSize = realSize,
+                    format = DocFormat.PDF
+                )
+                _documents.update { list ->
+                    list.map { if (it.id == doc.id) updatedDoc else it }
+                }
+                if (_selectedDocument.value?.id == doc.id) {
+                    _selectedDocument.value = updatedDoc
+                }
+                withContext(Dispatchers.Main) {
+                    showToast("Made searchable ($realSize)")
+                    onComplete?.invoke(updatedDoc)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Failed to make searchable: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /**
+     * Saves a scanned business card as a searchable PDF document with extracted contact details.
+     */
+    fun saveBusinessCardDocument(
+        imageUri: Uri,
+        name: String,
+        company: String,
+        details: String,
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val docId = "card-${System.currentTimeMillis()}"
+                val safeName = if (name.isNotBlank()) name.replace(Regex("[^a-zA-Z0-9_]"), "_") else "${System.currentTimeMillis() % 10000}"
+                val title = "Card_$safeName.pdf"
+                val outputFile = File(documentsDir, "$docId.pdf")
+                val page = ScannedPage(
+                    id = "p-card-1",
+                    pageNumber = 1,
+                    imageUri = imageUri.toString()
+                )
+                val generatedFile = pdfEngine.createSearchablePdf(listOf(page), outputFile, ocrEngine)
+                val realSize = PdfEngine.formatFileSize(generatedFile.length())
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, title, "application/pdf")
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$title"
+
+                val newDoc = DocumentItem(
+                    id = docId,
+                    title = title,
+                    date = "Today",
+                    time = "Just now",
+                    pageCount = 1,
+                    format = DocFormat.PDF,
+                    fileSize = realSize,
+                    thumbnailUri = imageUri.toString(),
+                    category = DocCategory.TODAY,
+                    pages = listOf(page),
+                    ocrText = details,
+                    filePath = generatedFile.absolutePath
+                )
+                _documents.update { listOf(newDoc) + it }
+                _selectedDocument.value = newDoc
+                withContext(Dispatchers.Main) {
+                    showToast("Saved business card to $destinationDisplay")
+                    onComplete?.invoke(newDoc)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Failed to save card: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            } finally {
+                _isProcessing.value = false
+            }
+        }
+    }
+
+    /**
+     * Saves a whiteboard scan with whiteboard contrast filter and optional searchable text layer.
+     */
+    fun saveWhiteboardDocument(
+        imageUri: Uri,
+        title: String,
+        onComplete: ((DocumentItem) -> Unit)? = null
+    ) {
+        if (_isProcessing.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isProcessing.value = true
+            try {
+                val docId = "wb-${System.currentTimeMillis()}"
+                val docTitle = if (title.isNotBlank()) "$title.pdf" else "Whiteboard_${System.currentTimeMillis() % 10000}.pdf"
+                val outputFile = File(documentsDir, "$docId.pdf")
+                val page = ScannedPage(
+                    id = "p-wb-1",
+                    pageNumber = 1,
+                    imageUri = imageUri.toString(),
+                    filter = PageFilter.WHITEBOARD
+                )
+                val generatedFile = if (_searchablePdfEnabled.value) {
+                    pdfEngine.createSearchablePdf(listOf(page), outputFile, ocrEngine)
+                } else {
+                    pdfEngine.createPdfFromPages(listOf(page), outputFile)
+                }
+                val realSize = PdfEngine.formatFileSize(generatedFile.length())
+                val saveResult = StorageHelper.saveFileToUserStorage(getApplication(), generatedFile, docTitle, "application/pdf")
+                val destinationDisplay = if (saveResult.success) saveResult.displayPath else "${Constants.DEFAULT_SAVE_LOCATION_NAME}/$docTitle"
+
+                val newDoc = DocumentItem(
+                    id = docId,
+                    title = docTitle,
+                    date = "Today",
+                    time = "Just now",
+                    pageCount = 1,
+                    format = DocFormat.PDF,
+                    fileSize = realSize,
+                    thumbnailUri = imageUri.toString(),
+                    category = DocCategory.TODAY,
+                    pages = listOf(page),
+                    filePath = generatedFile.absolutePath
+                )
+                _documents.update { listOf(newDoc) + it }
+                _selectedDocument.value = newDoc
+                withContext(Dispatchers.Main) {
+                    showToast("Whiteboard scan saved to $destinationDisplay")
+                    onComplete?.invoke(newDoc)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("Failed to save whiteboard scan: ${e.localizedMessage ?: "Unknown error"}")
                 }
             } finally {
                 _isProcessing.value = false
@@ -1355,6 +1611,11 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                 _isProcessing.value = false
             }
         }
+    }
+
+    suspend fun recognizeTextFromBitmap(bitmap: Bitmap, language: String? = null): String {
+        val effectiveLang = language ?: _ocrLanguage.value
+        return ocrEngine.recognizeText(bitmap, effectiveLang)
     }
 
     /**

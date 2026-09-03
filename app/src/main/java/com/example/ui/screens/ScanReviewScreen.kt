@@ -235,9 +235,13 @@ fun ScanReviewScreen(
                                 .fillMaxSize()
                                 .rotate(page.rotationAngle),
                             contentScale = ContentScale.Crop,
-                            colorFilter = if (page.filter == PageFilter.GRAYSCALE || page.filter == PageFilter.BW) {
-                                ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
-                            } else null
+                            colorFilter = when (page.filter) {
+                                PageFilter.GRAYSCALE, PageFilter.BW -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                                PageFilter.COLOR -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.2f) })
+                                PageFilter.WHITEBOARD, PageFilter.ENHANCED -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.4f) })
+                                PageFilter.MAGIC -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.35f) })
+                                PageFilter.ORIGINAL -> null
+                            }
                         )
 
                         // Page number badge
@@ -353,9 +357,13 @@ fun ScanReviewScreen(
                             contentDescription = "Active Document Preview",
                             modifier = imageModifier,
                             contentScale = ContentScale.Fit,
-                            colorFilter = if (activePage.filter == PageFilter.GRAYSCALE || activePage.filter == PageFilter.BW) {
-                                ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
-                            } else null
+                            colorFilter = when (activePage.filter) {
+                                PageFilter.GRAYSCALE, PageFilter.BW -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                                PageFilter.COLOR -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.2f) })
+                                PageFilter.WHITEBOARD, PageFilter.ENHANCED -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.4f) })
+                                PageFilter.MAGIC -> ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.35f) })
+                                PageFilter.ORIGINAL -> null
+                            }
                         )
 
                         // Interactive Crop Overlay mapped 1:1 to image displayed pixels

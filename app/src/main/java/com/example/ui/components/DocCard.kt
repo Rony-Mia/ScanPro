@@ -11,7 +11,9 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.FindInPage
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +41,7 @@ fun DocCard(
     onDelete: () -> Unit,
     onRename: (String) -> Unit,
     onShare: () -> Unit,
+    onMakeSearchable: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -197,6 +200,18 @@ fun DocCard(
                             showRenameDialog = true
                         }
                     )
+                    if (onMakeSearchable != null && document.format == DocFormat.PDF) {
+                        DropdownMenuItem(
+                            text = { Text("Make Searchable (OCR)") },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.Search, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onMakeSearchable()
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Share") },
                         leadingIcon = {

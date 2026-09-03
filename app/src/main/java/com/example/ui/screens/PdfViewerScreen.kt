@@ -23,8 +23,10 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Compress
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material3.*
@@ -66,6 +68,7 @@ fun PdfViewerScreen(
     var currentPageIndex by remember { mutableStateOf(0) }
     var isThumbnailStripVisible by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showViewerOptionsMenu by remember { mutableStateOf(false) }
     var renameText by remember(document.title) { mutableStateOf(document.title) }
 
     val totalPages = document.pageCount.coerceAtLeast(1)
@@ -159,12 +162,55 @@ fun PdfViewerScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.showToast("Document size: ${document.fileSize}, ${document.date}") }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    Box {
+                        IconButton(
+                            onClick = { showViewerOptionsMenu = true },
+                            modifier = Modifier.testTag("viewer_more_options_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showViewerOptionsMenu,
+                            onDismissRequest = { showViewerOptionsMenu = false }
+                        ) {
+                            if (document.format == DocFormat.PDF) {
+                                DropdownMenuItem(
+                                    text = { Text("Make Searchable (OCR)") },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Search, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        showViewerOptionsMenu = false
+                                        viewModel.makeDocumentSearchable(document)
+                                    },
+                                    modifier = Modifier.testTag("viewer_menu_make_searchable")
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Share Document") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Share, contentDescription = null)
+                                },
+                                onClick = {
+                                    showViewerOptionsMenu = false
+                                    com.example.util.ShareUtil.shareDocument(context, document)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Size: ${document.fileSize}") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Info, contentDescription = null)
+                                },
+                                onClick = {
+                                    showViewerOptionsMenu = false
+                                    viewModel.showToast("Pages: ${document.pageCount} | Size: ${document.fileSize}")
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

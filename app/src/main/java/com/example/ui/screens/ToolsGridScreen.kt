@@ -57,6 +57,8 @@ fun ToolsGridScreen(
     onNavigateToRotate: () -> Unit,
     onNavigateToDeletePages: () -> Unit,
     onNavigateToSign: () -> Unit,
+    onNavigateToBusinessCard: () -> Unit = {},
+    onNavigateToWhiteboard: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Real scanner (camera + gallery import) instead of the old fake camera mock.
@@ -69,6 +71,8 @@ fun ToolsGridScreen(
         // Scanning (Soft Green Tint)
         ToolGridItem(ToolType.SCAN, Icons.Outlined.DocumentScanner, ToolCategoryScan, "tool_tile_scan"),
         ToolGridItem(ToolType.ID_CARD, Icons.Outlined.Badge, ToolCategoryScan, "tool_tile_id_card"),
+        ToolGridItem(ToolType.BUSINESS_CARD, Icons.Outlined.ContactPage, ToolCategoryScan, "tool_tile_business_card"),
+        ToolGridItem(ToolType.WHITEBOARD, Icons.Outlined.CoPresent, ToolCategoryScan, "tool_tile_whiteboard"),
         ToolGridItem(ToolType.QR_BARCODE, Icons.Outlined.QrCodeScanner, ToolCategoryScan, "tool_tile_qr_barcode"),
         ToolGridItem(ToolType.OCR, Icons.Outlined.TextSnippet, ToolCategoryScan, "tool_tile_ocr"),
 
@@ -136,6 +140,8 @@ fun ToolsGridScreen(
                         when (item.tool) {
                             ToolType.SCAN -> launchScannerFlow()
                             ToolType.ID_CARD -> onNavigateToIdCard()
+                            ToolType.BUSINESS_CARD -> onNavigateToBusinessCard()
+                            ToolType.WHITEBOARD -> onNavigateToWhiteboard()
                             ToolType.QR_BARCODE -> onNavigateToQrBarcode()
                             ToolType.OCR -> onNavigateToOcr()
                             ToolType.MERGE -> onNavigateToMerge()

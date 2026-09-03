@@ -28,7 +28,9 @@ enum class PageFilter(val displayName: String) {
     COLOR("Color"),
     GRAYSCALE("Grayscale"),
     BW("B&W"),
-    MAGIC("Magic Color")
+    MAGIC("Magic Color"),
+    WHITEBOARD("Whiteboard"),
+    ENHANCED("Enhanced")
 }
 
 data class DocumentItem(
@@ -74,6 +76,8 @@ enum class ToolType(
     ID_CARD("ID Card", ToolCategory.SCANNING),
     QR_BARCODE("QR / Barcode", ToolCategory.SCANNING),
     OCR("OCR Text", ToolCategory.SCANNING),
+    BUSINESS_CARD("Business Card", ToolCategory.SCANNING),
+    WHITEBOARD("Whiteboard", ToolCategory.SCANNING),
     MERGE("Merge PDF", ToolCategory.EDITING),
     SPLIT("Split PDF", ToolCategory.EDITING),
     COMPRESS("Compress", ToolCategory.EDITING),
