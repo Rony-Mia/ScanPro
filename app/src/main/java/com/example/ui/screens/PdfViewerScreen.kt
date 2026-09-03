@@ -222,7 +222,7 @@ fun PdfViewerScreen(
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { innerPadding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -230,11 +230,36 @@ fun PdfViewerScreen(
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Document Page Viewport
+            val maxAvailableWidth = maxWidth
+            val maxAvailableHeight = maxHeight
+            val activeDraftPage = document.pages.getOrNull(currentPageIndex)
+
+            // Dynamic page aspect ratio calculation based on real rendered page dimensions
+            val pageAspectRatio = remember(pageBitmap, activeDraftPage, document) {
+                when {
+                    pageBitmap != null && pageBitmap!!.height > 0 && pageBitmap!!.width > 0 -> {
+                        (pageBitmap!!.width.toFloat() / pageBitmap!!.height.toFloat()).coerceIn(0.2f, 5.0f)
+                    }
+                    else -> 1f / 1.4142f // Default A4 document ratio
+                }
+            }
+
+            val maxW = maxAvailableWidth * 0.96f
+            val maxH = maxAvailableHeight * 0.96f
+            val availableAspect = if (maxH.value > 0f) maxW.value / maxH.value else 1f
+            val containerModifier = if (pageAspectRatio > availableAspect) {
+                Modifier
+                    .width(maxW)
+                    .aspectRatio(pageAspectRatio)
+            } else {
+                Modifier
+                    .height(maxH)
+                    .aspectRatio(pageAspectRatio)
+            }
+
+            // Document Page Viewport: dynamically wraps tight around the PDF page image without letterbox gaps
             Box(
-                modifier = Modifier
-                    .fillMaxHeight(0.92f)
-                    .fillMaxWidth(0.92f)
+                modifier = containerModifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.White)
                     .border(
@@ -244,7 +269,6 @@ fun PdfViewerScreen(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                val activeDraftPage = document.pages.getOrNull(currentPageIndex)
 
                 when {
                     isLoadingPage -> {

@@ -326,27 +326,55 @@ fun ImageMergerScreen(
                             zoomScale = (zoomScale * zoomChange).coerceIn(0.6f, 3.0f)
                         }
 
-                        Box(
+                        BoxWithConstraints(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
+                                .padding(8.dp)
                                 .transformable(state = transformableState),
                             contentAlignment = Alignment.Center
                         ) {
+                            val maxW = maxWidth
+                            val maxH = maxHeight
+
                             if (previewBitmap != null) {
-                                Image(
-                                    bitmap = previewBitmap!!.asImageBitmap(),
-                                    contentDescription = "Live Layout Preview",
-                                    modifier = Modifier
+                                val b = previewBitmap!!
+                                val bitmapAspect = if (b.height > 0 && b.width > 0) {
+                                    (b.width.toFloat() / b.height.toFloat()).coerceIn(0.1f, 10f)
+                                } else 1f
+
+                                val containerAspect = if (maxH.value > 0f) maxW.value / maxH.value else 1f
+                                val previewModifier = if (bitmapAspect > containerAspect) {
+                                    Modifier
+                                        .width(maxW)
+                                        .aspectRatio(bitmapAspect)
+                                } else {
+                                    Modifier
+                                        .height(maxH)
+                                        .aspectRatio(bitmapAspect)
+                                }
+
+                                Box(
+                                    modifier = previewModifier
                                         .graphicsLayer(
                                             scaleX = zoomScale,
                                             scaleY = zoomScale
                                         )
                                         .shadow(8.dp, RoundedCornerShape(4.dp))
                                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp))
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .testTag("merger_live_preview")
-                                )
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        bitmap = b.asImageBitmap(),
+                                        contentDescription = "Live Layout Preview",
+                                        contentScale = ContentScale.Fit,
+                                        alignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .testTag("merger_live_preview")
+                                    )
+                                }
                             }
                             if (isRenderingPreview) {
                                 CircularProgressIndicator(

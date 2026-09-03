@@ -284,7 +284,7 @@ fun ScanReviewScreen(
             ScanLineDivider(opacity = 0.35f)
 
             // Central Preview Area with Interactive Crop Overlay
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -293,10 +293,33 @@ fun ScanReviewScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (activePage != null) {
+                    val maxAvailableWidth = maxWidth
+                    val maxAvailableHeight = maxHeight
+
+                    // Calculate actual image resolution and effective aspect ratio (handling rotation)
+                    val (rawW, rawH) = imageIntrinsicSize ?: Pair(3, 4)
+                    val isRotated90or270 = (activePage.rotationAngle.toInt() % 180 != 0)
+                    val effectiveW = if (isRotated90or270) rawH else rawW
+                    val effectiveH = if (isRotated90or270) rawW else rawH
+                    val imageAspectRatio = if (effectiveH > 0 && effectiveW > 0) {
+                        (effectiveW.toFloat() / effectiveH.toFloat()).coerceIn(0.2f, 5.0f)
+                    } else 0.75f
+
+                    val maxW = maxAvailableWidth * 0.95f
+                    val maxH = maxAvailableHeight * 0.95f
+                    val availableAspect = if (maxH.value > 0f) maxW.value / maxH.value else 1f
+                    val containerModifier = if (imageAspectRatio > availableAspect) {
+                        Modifier
+                            .width(maxW)
+                            .aspectRatio(imageAspectRatio)
+                    } else {
+                        Modifier
+                            .height(maxH)
+                            .aspectRatio(imageAspectRatio)
+                    }
+
                     BoxWithConstraints(
-                        modifier = Modifier
-                            .fillMaxHeight(0.92f)
-                            .aspectRatio(0.72f)
+                        modifier = containerModifier
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color.White)
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
@@ -304,41 +327,31 @@ fun ScanReviewScreen(
                         val containerWidthPx = constraints.maxWidth.toFloat()
                         val containerHeightPx = constraints.maxHeight.toFloat()
 
-                        // Calculate actual letterboxed/pillarboxed image rectangle under ContentScale.Fit
-                        val (rawW, rawH) = imageIntrinsicSize ?: Pair(containerWidthPx.toInt(), containerHeightPx.toInt())
-                        val isRotated90or270 = (activePage.rotationAngle.toInt() % 180 != 0)
-                        val effectiveW = if (isRotated90or270) rawH else rawW
-                        val effectiveH = if (isRotated90or270) rawW else rawH
-                        val imageAspect = if (effectiveH > 0) effectiveW.toFloat() / effectiveH.toFloat() else (containerWidthPx / containerHeightPx)
-                        val containerAspect = containerWidthPx / containerHeightPx
-
-                        val displayedWidthPx: Float
-                        val displayedHeightPx: Float
-                        val displayedOffsetXPx: Float
-                        val displayedOffsetYPx: Float
-
-                        if (imageAspect > containerAspect) {
-                            // Letterboxed top and bottom
-                            displayedWidthPx = containerWidthPx
-                            displayedHeightPx = containerWidthPx / imageAspect
-                            displayedOffsetXPx = 0f
-                            displayedOffsetYPx = (containerHeightPx - displayedHeightPx) / 2f
-                        } else {
-                            // Pillarboxed left and right
-                            displayedHeightPx = containerHeightPx
-                            displayedWidthPx = containerHeightPx * imageAspect
-                            displayedOffsetXPx = (containerWidthPx - displayedWidthPx) / 2f
-                            displayedOffsetYPx = 0f
-                        }
+                        // With the container matching imageAspectRatio, displayed bounds align 1:1 with container
+                        val displayedWidthPx = containerWidthPx
+                        val displayedHeightPx = containerHeightPx
+                        val displayedOffsetXPx = 0f
+                        val displayedOffsetYPx = 0f
 
                         val density = LocalDensity.current
+
+                        val imageModifier = if (isRotated90or270) {
+                            Modifier
+                                .size(
+                                    width = with(density) { containerHeightPx.toDp() },
+                                    height = with(density) { containerWidthPx.toDp() }
+                                )
+                                .rotate(activePage.rotationAngle)
+                        } else {
+                            Modifier
+                                .fillMaxSize()
+                                .rotate(activePage.rotationAngle)
+                        }
 
                         AsyncImage(
                             model = activePage.imageUri ?: activePage.drawableRes,
                             contentDescription = "Active Document Preview",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .rotate(activePage.rotationAngle),
+                            modifier = imageModifier,
                             contentScale = ContentScale.Fit,
                             colorFilter = if (activePage.filter == PageFilter.GRAYSCALE || activePage.filter == PageFilter.BW) {
                                 ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
