@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -45,6 +47,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.data.ScanProViewModel
 import com.example.model.DocFormat
 import com.example.model.DocumentItem
@@ -74,6 +78,9 @@ fun PdfViewerScreen(
     val totalPages = document.pageCount.coerceAtLeast(1)
 
     var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var rawImageIntrinsicSize by remember(document.id, currentPageIndex) {
+        mutableStateOf<Pair<Int, Int>?>(null)
+    }
     var isLoadingPage by remember { mutableStateOf(true) }
     var pageRenderError by remember { mutableStateOf(false) }
     var thumbnailBitmaps by remember(document.id) { mutableStateOf<Map<Int, Bitmap>>(emptyMap()) }
@@ -85,9 +92,29 @@ fun PdfViewerScreen(
         pageRenderError = false
         val activeDraftPage = document.pages.getOrNull(currentPageIndex)
 
-        if (activeDraftPage != null && !activeDraftPage.imageUri.isNullOrEmpty()) {
-            // Fresh scan page with local image uri
+        if (activeDraftPage != null && (!activeDraftPage.imageUri.isNullOrEmpty() || activeDraftPage.drawableRes != 0)) {
+            // Fresh scan page with local image uri or drawable res
             pageBitmap = null
+            withContext(Dispatchers.IO) {
+                try {
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    if (!activeDraftPage.imageUri.isNullOrEmpty()) {
+                        val uri = Uri.parse(activeDraftPage.imageUri)
+                        if (uri.scheme == "file") {
+                            BitmapFactory.decodeFile(uri.path, options)
+                        } else {
+                            context.contentResolver.openInputStream(uri)?.use { stream ->
+                                BitmapFactory.decodeStream(stream, null, options)
+                            }
+                        }
+                    } else if (activeDraftPage.drawableRes != 0) {
+                        BitmapFactory.decodeResource(context.resources, activeDraftPage.drawableRes, options)
+                    }
+                    if (options.outWidth > 0 && options.outHeight > 0) {
+                        rawImageIntrinsicSize = Pair(options.outWidth, options.outHeight)
+                    }
+                } catch (_: Exception) {}
+            }
             isLoadingPage = false
         } else {
             // Render real PDF page directly from file via native PdfRenderer
@@ -281,10 +308,22 @@ fun PdfViewerScreen(
             val activeDraftPage = document.pages.getOrNull(currentPageIndex)
 
             // Dynamic page aspect ratio calculation based on real rendered page dimensions
-            val pageAspectRatio = remember(pageBitmap, activeDraftPage, document) {
+            val pageAspectRatio = remember(pageBitmap, rawImageIntrinsicSize, activeDraftPage, document) {
                 when {
                     pageBitmap != null && pageBitmap!!.height > 0 && pageBitmap!!.width > 0 -> {
                         (pageBitmap!!.width.toFloat() / pageBitmap!!.height.toFloat()).coerceIn(0.2f, 5.0f)
+                    }
+                    rawImageIntrinsicSize != null && rawImageIntrinsicSize!!.first > 0 && rawImageIntrinsicSize!!.second > 0 -> {
+                        val (rawW, rawH) = rawImageIntrinsicSize!!
+                        val rotation = activeDraftPage?.rotationAngle ?: 0f
+                        val isRotated90or270 = (rotation.toInt() % 180 != 0)
+                        val effectiveW = if (isRotated90or270) rawH else rawW
+                        val effectiveH = if (isRotated90or270) rawW else rawH
+                        if (effectiveH > 0 && effectiveW > 0) {
+                            (effectiveW.toFloat() / effectiveH.toFloat()).coerceIn(0.2f, 5.0f)
+                        } else {
+                            1f / 1.4142f
+                        }
                     }
                     else -> 1f / 1.4142f // Default A4 document ratio
                 }

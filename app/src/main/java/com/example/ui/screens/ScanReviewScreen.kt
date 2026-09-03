@@ -75,6 +75,7 @@ fun ScanReviewScreen(
     val isProcessing by viewModel.isProcessing.collectAsState()
 
     val activePage = draftPages.getOrNull(selectedIndex) ?: draftPages.firstOrNull()
+    val currentActivePage by rememberUpdatedState(activePage)
     var isCropModeActive by remember { mutableStateOf(true) }
     var showSaveFormatDialog by remember { mutableStateOf(false) }
     var chosenSaveFormat by remember { mutableStateOf(DocFormat.PDF) }
@@ -390,13 +391,22 @@ fun ScanReviewScreen(
                                         y = cropOffsetYDp - 12.dp
                                     )
                                     .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
-                                        detectDragGestures { change, dragAmount ->
+                                        var startLeft = activePage.cropLeft
+                                        var startTop = activePage.cropTop
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                val page = currentActivePage ?: activePage
+                                                startLeft = page.cropLeft
+                                                startTop = page.cropTop
+                                            }
+                                        ) { change, dragAmount ->
                                             change.consume()
-                                            val dLeft = dragAmount.x / displayedWidthPx
-                                            val dTop = dragAmount.y / displayedHeightPx
-                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.05f)
-                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.05f)
-                                            viewModel.updateActivePageCrop(newLeft, newTop, activePage.cropRight, activePage.cropBottom)
+                                            val page = currentActivePage ?: activePage
+                                            startLeft = (startLeft + dragAmount.x / displayedWidthPx)
+                                                .coerceIn(0f, page.cropRight - 0.05f)
+                                            startTop = (startTop + dragAmount.y / displayedHeightPx)
+                                                .coerceIn(0f, page.cropBottom - 0.05f)
+                                            viewModel.updateActivePageCrop(startLeft, startTop, page.cropRight, page.cropBottom)
                                         }
                                     }
                             )
@@ -409,13 +419,22 @@ fun ScanReviewScreen(
                                         y = cropOffsetYDp - 12.dp
                                     )
                                     .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
-                                        detectDragGestures { change, dragAmount ->
+                                        var startRight = activePage.cropRight
+                                        var startTop = activePage.cropTop
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                val page = currentActivePage ?: activePage
+                                                startRight = page.cropRight
+                                                startTop = page.cropTop
+                                            }
+                                        ) { change, dragAmount ->
                                             change.consume()
-                                            val dRight = dragAmount.x / displayedWidthPx
-                                            val dTop = dragAmount.y / displayedHeightPx
-                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.05f, 1f)
-                                            val newTop = (activePage.cropTop + dTop).coerceIn(0f, activePage.cropBottom - 0.05f)
-                                            viewModel.updateActivePageCrop(activePage.cropLeft, newTop, newRight, activePage.cropBottom)
+                                            val page = currentActivePage ?: activePage
+                                            startRight = (startRight + dragAmount.x / displayedWidthPx)
+                                                .coerceIn(page.cropLeft + 0.05f, 1f)
+                                            startTop = (startTop + dragAmount.y / displayedHeightPx)
+                                                .coerceIn(0f, page.cropBottom - 0.05f)
+                                            viewModel.updateActivePageCrop(page.cropLeft, startTop, startRight, page.cropBottom)
                                         }
                                     }
                             )
@@ -428,13 +447,22 @@ fun ScanReviewScreen(
                                         y = cropOffsetYDp + cropHeightDp - 12.dp
                                     )
                                     .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
-                                        detectDragGestures { change, dragAmount ->
+                                        var startLeft = activePage.cropLeft
+                                        var startBottom = activePage.cropBottom
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                val page = currentActivePage ?: activePage
+                                                startLeft = page.cropLeft
+                                                startBottom = page.cropBottom
+                                            }
+                                        ) { change, dragAmount ->
                                             change.consume()
-                                            val dLeft = dragAmount.x / displayedWidthPx
-                                            val dBottom = dragAmount.y / displayedHeightPx
-                                            val newLeft = (activePage.cropLeft + dLeft).coerceIn(0f, activePage.cropRight - 0.05f)
-                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.05f, 1f)
-                                            viewModel.updateActivePageCrop(newLeft, activePage.cropTop, activePage.cropRight, newBottom)
+                                            val page = currentActivePage ?: activePage
+                                            startLeft = (startLeft + dragAmount.x / displayedWidthPx)
+                                                .coerceIn(0f, page.cropRight - 0.05f)
+                                            startBottom = (startBottom + dragAmount.y / displayedHeightPx)
+                                                .coerceIn(page.cropTop + 0.05f, 1f)
+                                            viewModel.updateActivePageCrop(startLeft, page.cropTop, page.cropRight, startBottom)
                                         }
                                     }
                             )
@@ -447,13 +475,22 @@ fun ScanReviewScreen(
                                         y = cropOffsetYDp + cropHeightDp - 12.dp
                                     )
                                     .pointerInput(activePage.id, displayedWidthPx, displayedHeightPx) {
-                                        detectDragGestures { change, dragAmount ->
+                                        var startRight = activePage.cropRight
+                                        var startBottom = activePage.cropBottom
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                val page = currentActivePage ?: activePage
+                                                startRight = page.cropRight
+                                                startBottom = page.cropBottom
+                                            }
+                                        ) { change, dragAmount ->
                                             change.consume()
-                                            val dRight = dragAmount.x / displayedWidthPx
-                                            val dBottom = dragAmount.y / displayedHeightPx
-                                            val newRight = (activePage.cropRight + dRight).coerceIn(activePage.cropLeft + 0.05f, 1f)
-                                            val newBottom = (activePage.cropBottom + dBottom).coerceIn(activePage.cropTop + 0.05f, 1f)
-                                            viewModel.updateActivePageCrop(activePage.cropLeft, activePage.cropTop, newRight, newBottom)
+                                            val page = currentActivePage ?: activePage
+                                            startRight = (startRight + dragAmount.x / displayedWidthPx)
+                                                .coerceIn(page.cropLeft + 0.05f, 1f)
+                                            startBottom = (startBottom + dragAmount.y / displayedHeightPx)
+                                                .coerceIn(page.cropTop + 0.05f, 1f)
+                                            viewModel.updateActivePageCrop(page.cropLeft, page.cropTop, startRight, startBottom)
                                         }
                                     }
                             )

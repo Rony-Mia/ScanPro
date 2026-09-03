@@ -407,10 +407,10 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
         val pages = _activeDraftPages.value.toMutableList()
         if (index in pages.indices) {
             val p = pages[index]
-            val safeLeft = cropLeft.coerceIn(0f, 0.85f)
-            val safeTop = cropTop.coerceIn(0f, 0.85f)
-            val safeRight = cropRight.coerceIn(safeLeft + 0.1f, 1f)
-            val safeBottom = cropBottom.coerceIn(safeTop + 0.1f, 1f)
+            val safeLeft = cropLeft.coerceIn(0f, 0.90f)
+            val safeTop = cropTop.coerceIn(0f, 0.90f)
+            val safeRight = cropRight.coerceIn(safeLeft + 0.05f, 1f)
+            val safeBottom = cropBottom.coerceIn(safeTop + 0.05f, 1f)
             pages[index] = p.copy(
                 cropLeft = safeLeft,
                 cropTop = safeTop,
@@ -914,7 +914,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                     fileSize = realSize,
                     thumbnailUri = thumbUri?.toString() ?: frontUri,
                     category = DocCategory.TODAY,
-                    pages = listOf(frontPage, backPage),
+                    pages = emptyList(),
                     ocrText = "",
                     filePath = generatedFile.absolutePath
                 )
