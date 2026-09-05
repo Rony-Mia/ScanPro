@@ -15,6 +15,7 @@ import com.example.model.CompressionLevel
 import com.example.model.DocFormat
 import com.example.model.ScannedPage
 import com.example.model.WatermarkPosition
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -23,7 +24,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
@@ -34,6 +35,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.util.WeakHashMap
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -62,6 +64,44 @@ class PdfEngine(private val context: Context) {
         val stream = openInputStream(uri) ?: throw IllegalArgumentException("Cannot open stream for URI: $uri")
         val bytes = stream.use { it.readBytes() }
         return PDDocument.load(java.io.ByteArrayInputStream(bytes))
+    }
+
+    private val fontCache = WeakHashMap<PDDocument, MutableMap<String, PDType0Font>>()
+
+    /**
+     * Loads and caches a Unicode TrueType font (e.g. SolaimanLipi, Kalpurush, Nikosh)
+     * embedded into the given [PDDocument].
+     * Because PDType0Font is bound to a specific PDDocument instance, caching is keyed by
+     * document instance so that font bytes are read from assets only once per document.
+     */
+    private fun loadUnicodeFont(
+        doc: PDDocument,
+        fontFileName: String = "SolaimanLipi.ttf"
+    ): PDType0Font {
+        if (!PDFBoxResourceLoader.isReady()) {
+            PDFBoxResourceLoader.init(context)
+        }
+        synchronized(fontCache) {
+            val docFonts = fontCache.getOrPut(doc) { mutableMapOf() }
+            docFonts[fontFileName]?.let { return it }
+
+            val candidates = listOf(fontFileName, "SolaimanLipi.ttf", "Kalpurush.ttf", "Nikosh.ttf").distinct()
+            var lastException: Exception? = null
+
+            for (candidate in candidates) {
+                try {
+                    context.assets.open("fonts/$candidate").use { input ->
+                        val font = PDType0Font.load(doc, input, false)
+                        docFonts[fontFileName] = font
+                        return font
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                }
+            }
+
+            throw lastException ?: java.io.FileNotFoundException("Could not load Unicode font: fonts/$fontFileName")
+        }
     }
 
     /** Result of importing a real file picked from device storage (SAF). */
@@ -277,7 +317,9 @@ class PdfEngine(private val context: Context) {
 
         try {
             val safeOpacity = opacity.coerceIn(0.05f, 1.0f)
-            val font = PDType1Font.HELVETICA_BOLD
+            val font = loadUnicodeFont(doc)
+            val cleanText = text.filter { !it.isISOControl() }
+            val textToDraw = if (cleanText.isEmpty()) text else cleanText
 
             for (pageIndex in 0 until doc.numberOfPages) {
                 val page = doc.getPage(pageIndex)
@@ -291,8 +333,12 @@ class PdfEngine(private val context: Context) {
                     WatermarkPosition.CORNER -> 22f
                 }
 
-                val textWidth = (font.getStringWidth(text) / 1000f) * fontSize
-                val capHeight = (font.fontDescriptor?.capHeight ?: 700f) / 1000f * fontSize
+                val textWidth = try {
+                    (font.getStringWidth(textToDraw) / 1000f) * fontSize
+                } catch (_: Exception) {
+                    textToDraw.length * fontSize * 0.6f
+                }
+                val capHeight = ((font.fontDescriptor?.capHeight?.takeIf { it > 0 }) ?: 700f) / 1000f * fontSize
 
                 val contentStream = PDPageContentStream(
                     doc,
@@ -312,12 +358,24 @@ class PdfEngine(private val context: Context) {
                 contentStream.beginText()
                 contentStream.setFont(font, fontSize)
 
+                fun drawWatermarkText() {
+                    try {
+                        contentStream.showText(textToDraw)
+                    } catch (_: Exception) {
+                        for (ch in textToDraw) {
+                            try {
+                                contentStream.showText(ch.toString())
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+
                 when (position) {
                     WatermarkPosition.CENTER -> {
                         val x = (pageWidth - textWidth) / 2f
                         val y = (pageHeight - capHeight) / 2f
                         contentStream.newLineAtOffset(x, y)
-                        contentStream.showText(text)
+                        drawWatermarkText()
                     }
                     WatermarkPosition.DIAGONAL -> {
                         val cx = pageWidth / 2f
@@ -331,13 +389,13 @@ class PdfEngine(private val context: Context) {
                         val ty = cy - (halfW * s + halfH * c)
                         val matrix = Matrix(c, s, -s, c, tx, ty)
                         contentStream.setTextMatrix(matrix)
-                        contentStream.showText(text)
+                        drawWatermarkText()
                     }
                     WatermarkPosition.CORNER -> {
                         val x = pageWidth - textWidth - 32f
                         val y = 32f
                         contentStream.newLineAtOffset(x, y)
-                        contentStream.showText(text)
+                        drawWatermarkText()
                     }
                 }
 
@@ -599,6 +657,7 @@ class PdfEngine(private val context: Context) {
         val doc = PDDocument()
 
         try {
+            val unicodeFont = loadUnicodeFont(doc)
             for (page in pages) {
                 val rawBitmap = loadPageBitmap(page) ?: continue
                 val bitmap = scaleBitmapDown(rawBitmap, maxDimension)
@@ -620,7 +679,7 @@ class PdfEngine(private val context: Context) {
                         contentStream.beginText()
                         contentStream.setRenderingMode(RenderingMode.NEITHER)
                         for (word in words) {
-                            val sanitized = word.text.filter { c -> c.code in 32..126 }
+                            val sanitized = word.text.trim().filter { !it.isISOControl() }
                             if (sanitized.isBlank()) continue
 
                             val wordX = (word.left * pageWidth).coerceIn(0f, pageWidth)
@@ -630,7 +689,7 @@ class PdfEngine(private val context: Context) {
                             val fontSize = (wordH * 0.85f).coerceIn(4f, 120f)
 
                             try {
-                                contentStream.setFont(PDType1Font.HELVETICA, fontSize)
+                                contentStream.setFont(unicodeFont, fontSize)
                                 contentStream.setTextMatrix(Matrix.getTranslateInstance(wordX, wordY))
                                 contentStream.showText(sanitized)
                             } catch (_: Exception) {

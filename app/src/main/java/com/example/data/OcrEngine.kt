@@ -45,7 +45,7 @@ data class OcrWord(
  * Bundles English and Bengali for immediate offline use, and supports downloading additional
  * high-accuracy language models on demand.
  */
-class OcrEngine(private val context: Context) {
+open class OcrEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "OcrEngine"
@@ -303,7 +303,7 @@ class OcrEngine(private val context: Context) {
      * Uses Tesseract's ResultIterator at PageIteratorLevel.RIL_WORD to extract exact
      * normalized bounding rectangles (0f..1f relative to page dimensions) for searchable PDF generation.
      */
-    suspend fun detectWords(
+    open suspend fun detectWords(
         bitmap: Bitmap,
         language: String = DEFAULT_OCR_LANG
     ): List<OcrWord> = withContext(Dispatchers.IO) {
