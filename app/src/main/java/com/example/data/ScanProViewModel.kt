@@ -286,6 +286,7 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun deleteDocument(id: String) {
+        com.example.util.SecurePasswordStore.removePassword(getApplication(), id)
         _documents.update { list ->
             list.filterNot { it.id == id }
         }
@@ -1137,10 +1138,14 @@ class ScanProViewModel(application: Application) : AndroidViewModel(application)
                     id = docId,
                     title = targetFileName,
                     isProtected = true,
-                    password = pass,
+                    password = "",
                     fileSize = realSize,
                     filePath = protectedFile.absolutePath
                 )
+                // Store the actual password in Keystore-backed encrypted storage, not on
+                // the DocumentItem itself -- DocumentItem.password stays blank so it's
+                // never written into the plain JSON document library on disk.
+                com.example.util.SecurePasswordStore.savePassword(getApplication(), docId, pass)
                 _documents.update { list ->
                     list.map { if (it.id == doc.id) protected else it }
                 }

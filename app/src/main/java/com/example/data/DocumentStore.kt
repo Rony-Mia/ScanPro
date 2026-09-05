@@ -57,7 +57,9 @@ object DocumentStore {
         put("category", doc.category.name)
         put("pages", JSONArray().apply { doc.pages.forEach { put(pageToJson(it)) } })
         put("isProtected", doc.isProtected)
-        put("password", doc.password)
+        // Note: password is deliberately NOT persisted here. It's stored separately via
+        // SecurePasswordStore (Keystore-backed AES-256-GCM encryption), so it never sits
+        // in this plain JSON file on disk. See SecurePasswordStore.kt.
         put("watermark", doc.watermark)
         put("isCompressed", doc.isCompressed)
         put("ocrText", doc.ocrText)
@@ -79,7 +81,7 @@ object DocumentStore {
             (0 until arr.length()).map { i -> pageFromJson(arr.getJSONObject(i)) }
         } ?: emptyList(),
         isProtected = o.optBoolean("isProtected", false),
-        password = o.optString("password", ""),
+        password = "", // deliberately never read from disk -- see SecurePasswordStore.kt
         watermark = o.optString("watermark", ""),
         isCompressed = o.optBoolean("isCompressed", false),
         ocrText = o.optString("ocrText", ""),
